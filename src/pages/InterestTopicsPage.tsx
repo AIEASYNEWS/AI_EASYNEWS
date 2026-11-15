@@ -16,7 +16,6 @@ export function InterestTopicsPage({ onComplete }: InterestTopicsPageProps) {
   function complete(skip = false) {
     const topicIds = skip ? [] : selectedIds
     if (saveTopics(topicIds)) {
-      // 홈 화면을 연결할 때 onComplete에서 이동한다. 현재는 온보딩 화면만 제공한다.
       onComplete?.({ topicIds, completed: true })
     }
   }

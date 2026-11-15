@@ -9,5 +9,3 @@ export interface InterestPreferences {
   topicIds: TopicId[]
   completed: boolean
 }
-
-export type OnboardingRoute = 'welcome' | 'topics' | 'interests'
