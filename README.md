@@ -44,4 +44,4 @@ npm run lint
 | `src/utils` | 로컬 저장소 읽기·쓰기와 저장값 검증 |
 | `public/images/onboarding` | 피그마에서 내보낸 원본 SVG 아이콘 7개 |
 
-디자인: https://www.figma.com/design/0vabanvYv9G3zPhPlhcrye?node-id=25-12
+
