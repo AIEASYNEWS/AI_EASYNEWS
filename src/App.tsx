@@ -1,9 +1,24 @@
-const App = () => {
+import { useOnboardingNavigation } from './hooks/useOnboardingNavigation'
+import { InterestSettingsPage } from './pages/InterestSettingsPage'
+import { InterestTopicsPage } from './pages/InterestTopicsPage'
+import { OnboardingPage } from './pages/OnboardingPage'
+
+export default function App() {
+  const { page, navigate } = useOnboardingNavigation()
+
+  if (page === 'interests') {
+    return <InterestSettingsPage onBack={() => navigate('topics')} />
+  }
+
+  if (page === 'topics') {
+    return <InterestTopicsPage />
+  }
+
   return (
-    <div className="text-3xl font-bold underline">
-      Appddd
-    </div>
+    <OnboardingPage
+      onLogin={() => navigate('topics')}
+      onSignUp={() => navigate('topics')}
+      onContinueAsGuest={() => navigate('topics')}
+    />
   )
 }
-
-export default App
