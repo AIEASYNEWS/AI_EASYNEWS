@@ -1,0 +1,12 @@
+.git
+.firebase
+node_modules
+functions/node_modules
+dist
+.env*
+*.local
+*firebase-adminsdk*.json
+*.log
+tests
+functions/test
+docs
