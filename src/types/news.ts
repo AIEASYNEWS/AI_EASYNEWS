@@ -8,21 +8,28 @@ export interface RelatedReport {
   title: string
   focus: string
   kind: 'same-event' | 'different-perspective'
+  sourceUrl?: string
+  publishedAt?: string
 }
 
-export interface NewsArticle {
+export interface NewsItem {
   id: string
   topicId: TopicId
   title: string
-  easyTitle: string
   publisher: string
   publishedAt: string
-  relativeTime: string
+  relativeTime?: string
   sourceUrl: string
   excerpt: string
+  imageUrl?: string
+}
+
+export interface NewsArticle extends NewsItem {
+  easyTitle: string
   easyParagraphs: string[]
   originalParagraphs: string[]
   summary: string[]
   comparison: string
   reports: RelatedReport[]
+  comparisonNotice?: string
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { previewNewsService } from '../mocks/newsService'
+import { convertArticle } from '../apis/news'
 import type { NewsArticle } from '../types/news'
 
 interface ConversionProgressOptions {
   sourceUrl: string
   onSuccess: (article: NewsArticle) => void
-  onFailure: () => void
+  onFailure: (error: Error) => void
 }
 
 export function useConversionProgress({ sourceUrl, onSuccess, onFailure }: ConversionProgressOptions) {
@@ -13,19 +13,16 @@ export function useConversionProgress({ sourceUrl, onSuccess, onFailure }: Conve
 
   useEffect(() => {
     const controller = new AbortController()
-    const progressTimer = window.setInterval(() => setStep((current) => Math.min(3, current + 1)), 600)
-    previewNewsService.convertArticle(sourceUrl, controller.signal)
+    convertArticle(sourceUrl, setStep, controller.signal)
       .then((article) => {
         if (!controller.signal.aborted) onSuccess(article)
       })
-      .catch(() => {
-        if (!controller.signal.aborted) onFailure()
+      .catch((error: Error) => {
+        if (!controller.signal.aborted) onFailure(error)
       })
-      .finally(() => window.clearInterval(progressTimer))
 
     return () => {
       controller.abort()
-      window.clearInterval(progressTimer)
     }
   }, [sourceUrl, onSuccess, onFailure])
 

@@ -1,14 +1,15 @@
 import { TOPICS } from '../constants/topics'
+import { auth } from '../apis/firebase'
 import type { InterestPreferences, TopicId } from '../types/onboarding'
 
-const STORAGE_KEY = 'easynews.interest-preferences.v1'
+const storageKey = () => `easynews.interest-preferences.v2:${auth?.currentUser?.uid || 'guest'}`
 
 const isTopicId = (value: unknown): value is TopicId =>
   TOPICS.some((topic) => topic.id === value)
 
 export function readInterestPreferences(): InterestPreferences {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
+    const raw: unknown = JSON.parse(localStorage.getItem(storageKey()) ?? 'null')
 
     if (raw && typeof raw === 'object' && 'topicIds' in raw && Array.isArray(raw.topicIds)) {
       return {
@@ -25,7 +26,7 @@ export function readInterestPreferences(): InterestPreferences {
 
 export function writeInterestPreferences(preferences: InterestPreferences): boolean {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences))
+    localStorage.setItem(storageKey(), JSON.stringify(preferences))
     return true
   } catch {
     return false

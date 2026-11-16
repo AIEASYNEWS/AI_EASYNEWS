@@ -7,7 +7,7 @@ import { StatusMessage } from '../components/ui/StatusMessage'
 import { useInterestTopics } from '../hooks/useInterestTopics'
 
 export function InterestSettingsPage({ onBack }: { onBack: () => void }) {
-  const { selectedTopics, availableTopics, toggleTopic, isDirty, saveTopics, discardChanges, message } = useInterestTopics()
+  const { selectedTopics, availableTopics, toggleTopic, isDirty, saveTopics, discardChanges, message, loading, saving } = useInterestTopics()
   const [showDiscardDialog, setShowDiscardDialog] = useState(false)
 
   function requestBack() {
@@ -21,7 +21,7 @@ export function InterestSettingsPage({ onBack }: { onBack: () => void }) {
         pageTitle="관심 주제 설정"
         title="관심 주제 설정"
         action={{ label: '뒤로 가기', icon: 'back', onClick: requestBack }}
-        footer={<Button onClick={() => saveTopics()}>저장하기</Button>}
+        footer={<Button disabled={loading || saving} onClick={() => saveTopics()}>{saving ? '저장 중' : loading ? '불러오는 중' : '저장하기'}</Button>}
       >
         <section aria-labelledby="my-topics-heading">
           <h2 id="my-topics-heading" className="text-lg leading-[26px] font-bold">내 관심 주제</h2>
