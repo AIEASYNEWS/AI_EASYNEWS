@@ -3,24 +3,36 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": { "node": "24.x" },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:web": "vite",
+    "dev:api": "npm --prefix functions run dev",
+    "dev:local": "concurrently -k \"npm:emulators\" \"npm:dev:api:local\" \"npm:dev:web\"",
+    "dev:api:local": "node --watch --env-file=.env.local functions/src/local.js --emulators",
+    "emulators": "node scripts/start-emulators.mjs",
+    "test": "npm --prefix functions test && node --test tests/articleText.test.mjs",
+    "test:rules": "node --test tests/firestore.rules.test.mjs",
+    "test:integration": "node --test tests/server.integration.mjs"
   },
   "dependencies": {
+    "firebase": "^13.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "autoprefixer": "^10.6.2",
+    "concurrently": "^10.0.7",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
@@ -30,5 +42,8 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7"
   }
 }
