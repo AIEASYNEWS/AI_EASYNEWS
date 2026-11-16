@@ -5,6 +5,7 @@ const paths: Record<AppPage, string> = {
   home: '/home', welcome: '/onboarding', topics: '/onboarding/topics',
   interests: '/onboarding/interests', converting: '/converting',
   preview: '/articles/preview', article: '/articles/read',
+  login: '/login', signup: '/signup', explore: '/explore', my: '/my',
 }
 
 function subscribe(callback: () => void) {
@@ -24,14 +25,14 @@ export function useAppNavigation() {
     articleId: url.searchParams.get('id') ?? undefined,
     viewer: viewer === 'guest' || viewer === 'member' || viewer === 'subscriber' ? viewer : undefined,
     original: url.searchParams.get('tab') === 'original',
+    sourceUrl: url.searchParams.get('url') ?? undefined,
   }
 
   function navigate(nextPage: AppPage, options: Omit<AppRoute, 'page'> = {}) {
     const params = new URLSearchParams()
-    const effectiveViewer = options.viewer ?? route.viewer
-    if (effectiveViewer) params.set('viewer', effectiveViewer)
     if (options.articleId) params.set('id', options.articleId)
     if (options.original) params.set('tab', 'original')
+    if (options.sourceUrl) params.set('url', options.sourceUrl)
     window.location.hash = `${paths[nextPage]}${params.size ? `?${params}` : ''}`
   }
 

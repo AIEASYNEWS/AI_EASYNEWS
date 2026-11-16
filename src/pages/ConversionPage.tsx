@@ -7,7 +7,7 @@ import type { NewsArticle } from '../types/news'
 interface ConversionPageProps {
   sourceUrl: string
   onSuccess: (article: NewsArticle) => void
-  onFailure: () => void
+  onFailure: (error: Error) => void
   onCancel: () => void
 }
 

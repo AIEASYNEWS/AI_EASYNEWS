@@ -11,11 +11,11 @@ interface InterestTopicsPageProps {
 }
 
 export function InterestTopicsPage({ onComplete }: InterestTopicsPageProps) {
-  const { selectedIds, toggleTopic, saveTopics, message } = useInterestTopics()
+  const { selectedIds, toggleTopic, saveTopics, message, loading, saving } = useInterestTopics()
 
-  function complete(skip = false) {
+  async function complete(skip = false) {
     const topicIds = skip ? [] : selectedIds
-    if (saveTopics(topicIds)) {
+    if (await saveTopics(topicIds)) {
       onComplete?.({ topicIds, completed: true })
     }
   }
@@ -28,8 +28,8 @@ export function InterestTopicsPage({ onComplete }: InterestTopicsPageProps) {
           <p aria-live="polite" aria-atomic="true" className="text-center text-sm leading-5 font-medium text-[#333333]">
             {selectedIds.length > 0 ? `${selectedIds.length}개 선택했어요` : '관심 주제를 골라 주세요'}
           </p>
-          <Button disabled={selectedIds.length === 0} onClick={() => complete()}>선택 완료</Button>
-          <Button variant="text" onClick={() => complete(true)}>나중에 하기</Button>
+          <Button disabled={selectedIds.length === 0 || loading || saving} onClick={() => complete()}>{saving ? '저장 중' : loading ? '불러오는 중' : '선택 완료'}</Button>
+          <Button variant="text" disabled={loading || saving} onClick={() => complete(true)}>나중에 하기</Button>
         </div>
       }
     >

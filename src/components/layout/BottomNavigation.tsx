@@ -1,16 +1,17 @@
 import { Icon } from '../ui/Icon'
 
 interface BottomNavigationProps {
+  active?: 'home' | 'explore' | 'my'
   onHome: () => void
   onExplore: () => void
   onMyPage: () => void
 }
 
-export function BottomNavigation({ onHome, onExplore, onMyPage }: BottomNavigationProps) {
+export function BottomNavigation({ onHome, onExplore, onMyPage, active = 'home' }: BottomNavigationProps) {
   const items = [
-    { label: '홈', icon: 'home', onClick: onHome, active: true },
-    { label: '탐색', icon: 'explore', onClick: onExplore, active: false },
-    { label: '마이', icon: 'profile', onClick: onMyPage, active: false },
+    { label: '홈', icon: 'home', onClick: onHome, active: active === 'home' },
+    { label: '탐색', icon: 'explore', onClick: onExplore, active: active === 'explore' },
+    { label: '마이', icon: 'profile', onClick: onMyPage, active: active === 'my' },
   ] as const
 
   return (

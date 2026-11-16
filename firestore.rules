@@ -1,0 +1,23 @@
+rules_version = '2';
+// Private data is written ONLY through the API using Admin SDK with Zod validation.
+// users/{uid}: topicIds (unique enum strings, <=7), completed (bool), updatedAt (timestamp).
+// users/{uid}/articles/{id}: extracted article + validated AI result, savedAt (timestamp).
+// users/{uid}/usage/{day}: count (int), pending (lease id -> expiry millis), server only.
+// users/{uid}/questionUsage/{day}: count (int), server only.
+// users/{uid}/notificationReads/{id}: readAt (timestamp), server only.
+// No client writes or public data collections; no billing roles in user-editable documents.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() { return request.auth != null; }
+    function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+      match /articles/{articleId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
