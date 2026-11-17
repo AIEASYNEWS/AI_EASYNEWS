@@ -89,6 +89,23 @@ test('unsupported URL schemes are rejected before network access', async () => {
   assert.equal(result.data.code, 'INVALID_URL')
 })
 
+test('members can save notification settings without losing topics; guests cannot alter them', async () => {
+  const name = 'news_' + Date.now().toString(36)
+  const member = (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', {
+    email: name + '@id.easynews.invalid', password: 'reader1234', returnSecureToken: true,
+  })).data
+  const token = member.idToken
+  assert.ok(token)
+  assert.equal((await request(port, '/api/auth/username?id=' + name)).data.available, false)
+  assert.equal((await request(port, '/api/notification-settings', { enabled: true }, account.idToken, 'PUT')).status, 403)
+  assert.equal((await request(port, '/api/profile', { topicIds: ['health'], completed: true }, token, 'PUT')).status, 200)
+  assert.equal((await request(port, '/api/notification-settings', { enabled: false }, token, 'PUT')).status, 200)
+  assert.deepEqual((await request(port, '/api/notification-settings', undefined, token)).data, { enabled: false, topicIds: ['health'] })
+  assert.deepEqual((await request(port, '/api/notifications', undefined, token)).data, [])
+  assert.equal((await request(port, '/api/subscription', undefined, token)).data.active, false)
+  assert.equal((await request(port, '/api/notification-settings', { enabled: true, role: 'subscriber' }, token, 'PUT')).status, 400)
+})
+
 test('conversion streams actual stages, saves the result and refunds provider failure', async () => {
   const token = second.idToken
   rewriteShouldFail = true

@@ -25,7 +25,7 @@ export function InterestTopicsPage({ onComplete }: InterestTopicsPageProps) {
       pageTitle="관심 주제 선택"
       footer={
         <div className="flex flex-col gap-2">
-          <p aria-live="polite" aria-atomic="true" className="text-center text-sm leading-5 font-medium text-[#333333]">
+          <p aria-live="polite" aria-atomic="true" className="text-center text-sm leading-5 font-medium text-secondary">
             {selectedIds.length > 0 ? `${selectedIds.length}개 선택했어요` : '관심 주제를 골라 주세요'}
           </p>
           <Button disabled={selectedIds.length === 0 || loading || saving} onClick={() => complete()}>{saving ? '저장 중' : loading ? '불러오는 중' : '선택 완료'}</Button>
@@ -35,7 +35,7 @@ export function InterestTopicsPage({ onComplete }: InterestTopicsPageProps) {
     >
       <section aria-labelledby="topics-heading">
         <h1 id="topics-heading" className="text-2xl leading-8 font-bold break-keep">어떤 뉴스가 궁금하세요?</h1>
-        <p className="mt-2 text-sm leading-[21px] break-keep text-[#777777]">관심 주제를 여러 개 고를 수 있어요. 나중에 마이페이지에서 바꿀 수 있어요.</p>
+        <p className="mt-2 text-sm leading-[21px] break-keep text-muted">관심 주제를 여러 개 고를 수 있어요. 나중에 마이페이지에서 바꿀 수 있어요.</p>
         <div role="group" aria-label="관심 주제" className="mt-8 flex flex-wrap gap-2">
           {TOPICS.map((topic) => (
             <TopicChip key={topic.id} topic={topic} selected={selectedIds.includes(topic.id)} onClick={() => toggleTopic(topic.id)} />

@@ -112,25 +112,25 @@ export function RelatedReportsCarousel({ reports, onRelated }: RelatedReportsCar
             type="button"
             aria-label={(index + 1) + '번 비교 기사: ' + report.title}
             onClick={() => onRelated(report)}
-            className="row-span-5 grid grid-rows-subgrid content-start items-start snap-start select-none rounded-xl border border-[#dddddd] p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
+            className="row-span-5 grid grid-rows-subgrid content-start items-start snap-start select-none rounded-xl border border-line p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
           >
-            <div className="flex items-start"><span className="rounded bg-[#f5f5f5] px-2 py-1 text-xs leading-[18px] text-[#333333]">{report.viewpoint || (report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점')}</span></div>
-            <p className="mt-3 text-xs leading-[18px] text-[#777777]">{report.publisher} · {formatDate(report.publishedAt)}</p>
+            <div className="flex items-start"><span className="rounded bg-surface px-2 py-1 text-xs leading-[18px] text-secondary">{report.viewpoint || (report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점')}</span></div>
+            <p className="mt-3 text-xs leading-[18px] text-muted">{report.publisher} · {formatDate(report.publishedAt)}</p>
             <h3 className="mt-2 text-base leading-6 font-bold break-keep [overflow-wrap:anywhere]">{report.title}</h3>
-            <p className="mt-2 text-sm leading-[21px] break-keep text-[#777777] [overflow-wrap:anywhere]">원문과 다른 점: {report.focus}</p>
-            <div className={report.originalEvidence && report.relatedEvidence ? 'mt-3 space-y-2 border-t border-[#dddddd] pt-3 text-xs leading-[18px] text-[#777777]' : ''}>
+            <p className="mt-2 text-sm leading-[21px] break-keep text-muted [overflow-wrap:anywhere]">원문과 다른 점: {report.focus}</p>
+            <div className={report.originalEvidence && report.relatedEvidence ? 'mt-3 space-y-2 border-t border-line pt-3 text-xs leading-[18px] text-muted' : ''}>
               {report.originalEvidence && report.relatedEvidence && <><p>원문 근거: “{report.originalEvidence}”</p><p>비교 기사 근거: “{report.relatedEvidence}”</p></>}
             </div>
           </button>
         ))}
       </div>
       {reports.length > 1 && <div className="mt-3 flex items-center justify-between gap-2" aria-label="비교 기사 이동">
-        <button type="button" aria-label="이전 비교 기사" aria-controls={id} disabled={current === 0} onClick={() => goTo(current - 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[#dddddd] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><Icon name="back" /></button>
+        <button type="button" aria-label="이전 비교 기사" aria-controls={id} disabled={current === 0} onClick={() => goTo(current - 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><Icon name="back" /></button>
         <div className="flex min-w-0 flex-col items-center">
-          <div className="flex justify-center" aria-label="비교 기사 페이지">{reports.map((report, index) => <button key={report.id} type="button" aria-label={(index + 1) + '번 기사 보기'} aria-controls={id} aria-current={current === index ? 'true' : undefined} onClick={() => goTo(index)} className="flex size-8 cursor-pointer items-center justify-center rounded-full focus-visible:outline-2"><span className={'size-1.5 rounded-full ' + (current === index ? 'bg-[#333333]' : 'bg-[#dddddd]')} /></button>)}</div>
-          <p aria-live="polite" aria-atomic="true" className="text-xs leading-[18px] text-[#777777]">{current + 1} / {reports.length}</p>
+          <div className="flex justify-center" aria-label="비교 기사 페이지">{reports.map((report, index) => <button key={report.id} type="button" aria-label={(index + 1) + '번 기사 보기'} aria-controls={id} aria-current={current === index ? 'true' : undefined} onClick={() => goTo(index)} className="flex size-8 cursor-pointer items-center justify-center rounded-full focus-visible:outline-2"><span className={'size-1.5 rounded-full ' + (current === index ? 'bg-brand' : 'bg-[#dddddd]')} /></button>)}</div>
+          <p aria-live="polite" aria-atomic="true" className="text-xs leading-[18px] text-muted">{current + 1} / {reports.length}</p>
         </div>
-        <button type="button" aria-label="다음 비교 기사" aria-controls={id} disabled={current === reports.length - 1} onClick={() => goTo(current + 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[#dddddd] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><span className="rotate-180"><Icon name="back" /></span></button>
+        <button type="button" aria-label="다음 비교 기사" aria-controls={id} disabled={current === reports.length - 1} onClick={() => goTo(current + 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><span className="rotate-180"><Icon name="back" /></span></button>
       </div>}
     </div>
   )

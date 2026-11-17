@@ -26,11 +26,12 @@ const sizes: Record<IconName, number> = {
 const onboardingIcons = new Set<IconName>(['tag', 'bell', 'close', 'back', 'check', 'plus', 'remove'])
 
 export function Icon({ name }: { name: IconName }) {
+  const designIcons: Partial<Record<IconName, string>> = { back: 'back', close: 'close', lock: 'guest-lock', bell: 'bell', notification: 'bell-unread', check: 'topic-check' }
   const size = sizes[name]
 
   return (
     <img
-      src={`/images/${onboardingIcons.has(name) ? 'onboarding' : 'home'}/${name}.svg`}
+      src={designIcons[name] ? `/images/ui/${designIcons[name]}.svg` : `/images/${onboardingIcons.has(name) ? 'onboarding' : 'home'}/${name}.svg`}
       width={size}
       height={size}
       alt=""
