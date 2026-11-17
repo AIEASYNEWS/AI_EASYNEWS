@@ -1,30 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { auth } from '../apis/firebase'
+import { detachDevice } from '../apis/push'
+import { getNotificationSettings } from '../apis/account'
 import { getHistory } from '../apis/news'
+import { useAccountResource } from '../hooks/useAccountResource'
 import { NewsListItem } from '../components/explore/NewsListItem'
 import { BottomNavigation } from '../components/layout/BottomNavigation'
 import { PageLayout } from '../components/layout/PageLayout'
+import { SettingsRow, TopicBadges } from '../components/layout/SettingsRow'
 import { Button } from '../components/ui/Button'
 import { RequestState } from '../components/ui/RequestState'
 import { useAuth } from '../hooks/useAuth'
-import type { NewsItem } from '../types/news'
+import type { NewsItem, ViewerMode } from '../types/news'
 
-export function MyPage({ onHome, onExplore, onSettings, onLogin, onArticle }: { onHome: () => void; onExplore: () => void; onSettings: () => void; onLogin: () => void; onArticle: (article: NewsItem) => void }) {
+interface Props {
+  viewer: ViewerMode; quotaText: string; onHome: () => void; onExplore: () => void; onSettings: () => void
+  onLogin: () => void; onAlerts: () => void; onPlan: () => void; onArticle: (article: NewsItem) => void
+}
+export function MyPage({ viewer, quotaText, onHome, onExplore, onSettings, onLogin, onAlerts, onPlan, onArticle }: Props) {
   const { user } = useAuth()
-  const [history, setHistory] = useState<NewsItem[]>()
+  const guest = viewer === 'guest'
+  const paid = viewer === 'subscriber'
+  const settings = useAccountResource(getNotificationSettings, !guest)
+  const history = useAccountResource(getHistory, !!user)
   const [error, setError] = useState('')
-  const [version, setVersion] = useState(0)
-  useEffect(() => {
-    let active = true
-    getHistory().then(items => { if (active) setHistory(items) }).catch(cause => { if (active) setError(cause.message) })
-    return () => { active = false }
-  }, [version, user?.uid])
-  return <PageLayout title="마이" header={<h1 className="text-xl leading-7 font-bold">마이</h1>} contentClassName="px-5 pt-3 pb-6" footer={<BottomNavigation active="my" onHome={onHome} onExplore={onExplore} onMyPage={() => {}} />}>
-    <h2 className="text-2xl leading-8 font-bold">{user && !user.isAnonymous ? `${user.displayName || '회원'}님` : '쉬운말 뉴스와 함께해요'}</h2><p className="mt-2 text-sm text-[#777777]">{user && !user.isAnonymous ? user.email : '로그인하면 읽은 기사와 관심 주제를 이어서 볼 수 있어요.'}</p>
-    {(!user || user.isAnonymous) && <Button className="mt-6" onClick={onLogin}>로그인하기</Button>}
-    <Button variant="secondary" className="mt-6" onClick={onSettings}>관심 주제 설정</Button>
-    <section className="mt-8"><h2 className="text-lg leading-[26px] font-bold">변환한 기사</h2><div className="mt-4">{error ? <RequestState error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /> : !history ? <RequestState loading /> : history.length ? history.map(article => <NewsListItem key={article.id} article={article} onClick={() => onArticle(article)} />) : <RequestState empty="아직 변환한 기사가 없어요." />}</div></section>
-    {user && !user.isAnonymous && <Button variant="text" className="mt-6" onClick={() => { if (auth) void signOut(auth).then(onHome).catch(() => setError('로그아웃하지 못했어요. 다시 시도해 주세요.')) }}>로그아웃</Button>}
+  async function logout() {
+    try { await detachDevice(); if (auth) await signOut(auth); onHome() }
+    catch { setError('로그아웃하지 못했어요. 다시 시도해 주세요.') }
+  }
+  return <PageLayout title="마이페이지" header={<h1 className="text-xl font-bold">마이페이지</h1>} contentClassName="px-5 pt-2 pb-6" footer={<BottomNavigation active="my" onHome={onHome} onExplore={onExplore} onMyPage={() => document.querySelector('main')?.scrollTo(0, 0)} />}>
+    <section className="rounded-2xl border border-line bg-surface p-4">
+      <div className="flex items-center gap-3"><img src={guest ? '/images/ui/guest-avatar.svg' : '/images/ui/account-avatar.svg'} alt="" width="40" height="40" />
+        <h2 className="text-lg font-bold">{guest ? '로그인이 필요해요' : (user?.displayName || user?.email?.split('@')[0] || '회원') + ' 님'}</h2>
+        <span className={`rounded px-2 py-1 text-xs font-bold ${guest ? 'bg-slate-200 text-muted' : 'bg-brand-soft text-brand'}`}>{guest ? '비회원' : paid ? '구독 회원' : '회원'}</span></div>
+      <p className="mt-4 text-[13px] text-muted">{paid ? '변환 횟수' : '오늘 남은 변환'} <strong className="ml-1 text-ink">{quotaText}</strong></p>
+    </section>
+    {guest ? <section className="mt-6 rounded-2xl border border-dashed border-line px-4 py-6 text-center"><img src="/images/ui/guest-lock.svg" alt="" className="mx-auto mb-4" /><h2 className="font-bold">로그인하고 더 편하게 보기</h2><p className="mt-2 text-sm text-muted">관심 주제 설정, 맞춤 추천, 새 기사 알림을 쓸 수 있어요.</p>
+      <Button className="mt-4 min-h-12!" onClick={onLogin}>로그인하기</Button></section> : <>
+      <section className="mt-6"><h2 className="text-lg font-bold">내 관심 주제</h2>{settings.value ? <TopicBadges ids={settings.value.topicIds} /> : <RequestState loading={!settings.error} error={settings.error} onRetry={settings.retry} />}</section>
+      <div className="mt-6"><SettingsRow title="관심 주제 설정" onClick={onSettings} />
+        <SettingsRow title="알림 설정" detail={settings.value ? `관심 주제 알림 ${settings.value.enabled ? '켜짐' : '꺼짐'}` : undefined} onClick={onAlerts} />
+        <SettingsRow title={paid ? '구독 관리' : '구독하기'} detail={paid ? '결제한 곳에서 구독을 확인하고 바꿀 수 있어요.' : '쉬운말 변환을 횟수 제한 없이 쓸 수 있어요.'} onClick={onPlan} />
+        <button onClick={() => void logout()} className="min-h-14 w-full border-b border-line text-left">로그아웃</button></div>
+    </>}
+    {(history.value?.length || history.error) ? <details className="mt-6"><summary className="cursor-pointer font-semibold">변환한 기사 {history.value?.length}</summary>
+      <div className="mt-4">{history.error ? <RequestState error={history.error} onRetry={history.retry} /> : history.value?.map(article => <NewsListItem key={article.id} article={article} onClick={() => onArticle(article)} />)}</div></details> : null}
+    {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
   </PageLayout>
 }

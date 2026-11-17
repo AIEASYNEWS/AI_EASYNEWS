@@ -8,6 +8,7 @@ const app = firebaseConfigured ? initializeApp({
   apiKey: usingEmulators ? 'demo-key' : import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
   projectId, appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
 }) : null
 export const auth = app ? getAuth(app) : null
 if (auth && usingEmulators) connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
