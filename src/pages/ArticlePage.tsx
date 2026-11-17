@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { RelatedReportsCarousel } from '../components/article/RelatedReportsCarousel'
 import { ArticleQuestionSheet } from '../components/article/ArticleQuestionSheet'
 import { PageLayout } from '../components/layout/PageLayout'
 import { Icon } from '../components/ui/Icon'
@@ -19,10 +20,8 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
   const [tab, setTab] = useState(original ? 'original' : 'easy')
   const [selection, setSelection] = useState<{ text: string; index: number } | null>(null)
   const [questionSentence, setQuestionSentence] = useState('')
-  const [activeReport, setActiveReport] = useState(0)
   const summaryRef = useRef<HTMLElement>(null)
   const comparisonRef = useRef<HTMLElement>(null)
-  const reportsRef = useRef<(HTMLButtonElement | null)[]>([])
   const easy = tab === 'easy'
   const paragraphs = useMemo(() => readableArticleParagraphs(easy ? article.easyParagraphs : article.originalParagraphs), [easy, article.easyParagraphs, article.originalParagraphs])
   const [copyStatus, setCopyStatus] = useState('')
@@ -72,13 +71,11 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
         </div>
         {easy && article.comparisonNotice && <p role="status" className="px-5 pb-6 text-sm leading-[21px] text-[#777777]">{article.comparisonNotice}</p>}
         {easy && article.reports.length > 0 && <section ref={comparisonRef} aria-labelledby="comparison-heading" className="scroll-mt-5 border-t-[6px] border-[#dddddd] px-5 py-6">
-          <h2 id="comparison-heading" className="text-lg leading-[26px] font-bold">다른 언론사는 어떻게 보도했을까?</h2>
-          <p className="mt-2 text-sm leading-[21px] text-[#777777]">관련 보도 {article.reports.length}개를 옆으로 넘겨 비교해 보세요.</p>
-          <div className="mt-4 rounded-xl bg-[#f5f5f5] p-4"><p className="text-xs leading-[18px] text-[#777777]">보도 차이</p><p className="mt-2 text-sm leading-[21px]">{article.comparison}</p></div>
-          <div aria-label="다른 언론사 보도" onScroll={(event) => { const el = event.currentTarget; const width = el.firstElementChild?.getBoundingClientRect().width ?? 260; setActiveReport(Math.min(article.reports.length - 1, Math.round(el.scrollLeft / (width + 12)))) }} className="-mr-5 mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pr-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {article.reports.map((report, index) => <button key={report.id} ref={(element) => { reportsRef.current[index] = element }} type="button" onClick={() => onRelated(report)} className="w-[260px] shrink-0 cursor-pointer snap-start rounded-xl border border-[#dddddd] p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"><span className="rounded bg-[#f5f5f5] px-2 py-1 text-xs leading-[18px] text-[#333333]">{report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점'}</span><p className="mt-3 text-xs leading-[18px] text-[#777777]">{report.publisher} · {formatDate(report.publishedAt)}</p><h3 className="mt-2 text-base leading-6 font-bold break-keep">{report.title}</h3><p className="mt-2 text-sm leading-[21px] text-[#777777]">강조한 내용: {report.focus}</p></button>)}
-          </div>
-          <div aria-label="비교 기사 페이지" className="mt-2 flex justify-center gap-1">{article.reports.map((report, index) => <button key={report.id} type="button" aria-label={`${index + 1}번 기사 보기`} aria-current={activeReport === index ? 'true' : undefined} onClick={() => reportsRef.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })} className="flex size-6 cursor-pointer items-center justify-center rounded-full focus-visible:outline-2"><span className={`size-1.5 rounded-full ${activeReport === index ? 'bg-[#333333]' : 'bg-[#dddddd]'}`} /></button>)}</div>
+          <h2 id="comparison-heading" className="text-lg leading-[26px] font-bold">같은 이슈, 다른 관점</h2>
+          <p className="mt-2 text-sm leading-[21px] text-[#777777]">같은 사건·쟁점을 다르게 다룬 보도 {article.reports.length}개예요. 옆으로 넘기거나 화살표를 눌러 비교해 보세요.</p>
+          {article.originalFocus && <div className="mt-4 rounded-xl border border-[#dddddd] p-4"><p className="text-xs leading-[18px] text-[#777777]">지금 읽은 기사의 관점</p><p className="mt-2 text-sm leading-[21px]">{article.originalFocus}</p></div>}
+          <div className="mt-4 rounded-xl bg-[#f5f5f5] p-4"><p className="text-xs leading-[18px] text-[#777777]">관점이 다른 부분</p><p className="mt-2 text-sm leading-[21px]">{article.comparison}</p></div>
+          <RelatedReportsCarousel key={article.id} reports={article.reports} onRelated={onRelated} />
         </section>}
       </PageLayout>
       {questionSentence && <ArticleQuestionSheet key={questionSentence} sentence={questionSentence} articleId={article.id} sourceUrl={article.sourceUrl} onClose={() => { setQuestionSentence(''); setSelection(null) }} />}

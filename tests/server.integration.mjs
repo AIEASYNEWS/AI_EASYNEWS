@@ -101,7 +101,7 @@ test('conversion streams actual stages, saves the result and refunds provider fa
   assert.match(result.data, /"step":2/)
   assert.match(result.data, /"step":3/)
   assert.match(result.data, /event: result/)
-  assert.match(result.data, /비교할 수 있는/)
+  assert.match(result.data, /"comparisonStatus":"no-candidates"/)
   assert.equal((await getQuota(second.localId)).remaining, 2)
   assert.equal((await request(port, `/api/articles/${fixtureArticle.id}`, undefined, token)).data.easyTitle, '쉬운 제목')
 })
