@@ -5,6 +5,7 @@ import { getConfig, TOPIC_IDS } from './config.js'
 import { requireUser } from './firebase.js'
 import { readArticle } from './articles.js'
 import { getNews, relatedCandidates } from './news.js'
+import { buildComparison } from './comparison.js'
 import { assertAiConfigured, rewriteArticle, compareArticles, answerQuestion } from './ai.js'
 import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead } from './store.js'
 
@@ -98,19 +99,12 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
       send('progress', { step: 1 })
       const article = await articleReader(sourceUrl, controller.signal)
       send('progress', { step: 2 })
-      const { keywords, ...rewritten } = await rewrite(article, controller.signal)
+      const { keywords, comparisonQueries = [], ...rewritten } = await rewrite(article, controller.signal)
       Object.assign(article, rewritten)
       send('progress', { step: 3 })
-      try {
-        const candidates = await findRelated(article, keywords)
-        const loaded = await Promise.allSettled(candidates.map(item => articleReader(item.sourceUrl, controller.signal)))
-        const related = loaded.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
-        Object.assign(article, await compare(article, related, controller.signal))
-        if (!article.reports.length) article.comparisonNotice = '비교할 수 있는 다른 언론사 기사를 찾지 못했어요.'
-      } catch {
-        controller.signal.throwIfAborted()
-        article.comparisonNotice = '다른 언론사 보도를 불러오지 못했어요. 쉬운말 기사와 요약은 볼 수 있어요.'
-      }
+      Object.assign(article, await buildComparison(article, keywords, {
+        queries: comparisonQueries, signal: controller.signal, findRelated, articleReader, compare,
+      }))
       controller.signal.throwIfAborted()
       await settle(article)
       send('result', article)

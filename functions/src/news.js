@@ -43,20 +43,27 @@ async function cached(key, loader) {
   return promise
 }
 
-async function fromNaver(query, topic) {
+async function fromNaver(query, topic, { signal, sort = 'date' } = {}) {
   const url = new URL('https://openapi.naver.com/v1/search/news.json')
-  url.search = new URLSearchParams({ query: query || topicLabels[topic] || '뉴스', display: '100', sort: 'date' }).toString()
-  const response = await fetch(url, { signal: AbortSignal.timeout(12_000), headers: { 'X-Naver-Client-Id': process.env.NAVER_CLIENT_ID, 'X-Naver-Client-Secret': process.env.NAVER_CLIENT_SECRET } })
+  url.search = new URLSearchParams({ query: query || topicLabels[topic] || '뉴스', display: '100', sort }).toString()
+  const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000), headers: { 'X-Naver-Client-Id': process.env.NAVER_CLIENT_ID, 'X-Naver-Client-Secret': process.env.NAVER_CLIENT_SECRET } })
   if (!response.ok) throw new AppError('NEWS_UNAVAILABLE', '뉴스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
   const data = await response.json()
   return (data.items || []).map(item => itemFrom({ title: item.title, url: item.originallink || item.link, date: item.pubDate, description: item.description, category: topic })).filter(Boolean)
 }
 
-async function fromGdelt(topic) {
+async function fromGdelt(topic, { query = '', publishedAt, signal } = {}) {
   const url = new URL('https://api.gdeltproject.org/api/v2/doc/doc')
-  url.search = new URLSearchParams({ query: `${topicQueries[topic] || ''} sourcelang:korean`.trim(), mode: 'artlist', format: 'json', maxrecords: '250', sort: 'datedesc', timespan: '72h' }).toString()
-  // This is a fixed provider URL, separate from arbitrary article URL fetching.
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+  const params = new URLSearchParams({ query: `${query || topicQueries[topic] || ''} sourcelang:korean`.trim(), mode: 'artlist', format: 'json', maxrecords: '250', sort: query ? 'hybridrel' : 'datedesc' })
+  const reference = Date.parse(publishedAt)
+  if (query && Number.isFinite(reference)) {
+    const format = time => new Date(time).toISOString().replace(/\D/g, '').slice(0, 14)
+    params.set('startdatetime', format(reference - 14 * 86400_000))
+    params.set('enddatetime', format(Math.min(Date.now(), reference + 14 * 86400_000)))
+  } else params.set('timespan', query ? '30d' : '72h')
+  url.search = params.toString()
+  // Fixed provider URL; article bodies still use the DNS-pinned reader.
+  const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) })
   if (!response.ok) throw new AppError('NEWS_UNAVAILABLE', '뉴스 제공 서비스가 혼잡해요. 잠시 후 다시 시도해 주세요.', 503)
   const text = await response.text()
   let data
@@ -82,9 +89,9 @@ export function parseRssFeed(text, feedUrl) {
   })).filter(Boolean)
 }
 
-async function fromConfiguredRss() {
+async function fromConfiguredRss({ signal } = {}) {
   const responses = await Promise.allSettled(getConfig().rssFeeds.map(async url => {
-    const { text } = await safeFetchText(url, { accept: 'application/rss+xml,application/xml,text/xml' })
+    const { text } = await safeFetchText(url, { signal, accept: 'application/rss+xml,application/xml,text/xml' })
     return { items: parseRssFeed(text, url), section: Boolean(rssFeedTopic(url)) }
   }))
   // Section feeds carry a more reliable topic than keyword inference in the
@@ -119,11 +126,90 @@ export async function getNews({ query = '', topic = '', topics = [], sort = 'lat
   return { items: items.slice(offset, offset + pageSize), total: items.length, hasMore: offset + pageSize < items.length, source: naver ? 'naver' : rss ? 'rss' : 'gdelt' }
 }
 
-export async function relatedCandidates(article, keywords) {
-  const feed = await getNews({ topic: article.topicId, limit: 250 })
-  const sourceHost = new URL(article.sourceUrl).hostname.replace(/^www\./, '')
-  const scored = feed.items.filter(item => new URL(item.sourceUrl).hostname.replace(/^www\./, '') !== sourceHost)
-    .map(item => ({ item, score: keywords.filter(word => item.title.toLocaleLowerCase('ko').includes(word.toLocaleLowerCase('ko'))).length }))
-    .filter(entry => entry.score > 0).sort((a, b) => b.score - a.score)
-  return scored.slice(0, 4).map(entry => entry.item)
+/** Normalize known publisher subdomains without confusing unrelated .co.kr domains. */
+export function publisherKey(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, '')
+    return Object.keys(publisherNames).find(domain => host === domain || host.endsWith(`.${domain}`)) || host.replace(/^(?:m|news)\./, '')
+  } catch { return '' }
+}
+
+function queryText(value, max = 100) {
+  return cleanText(String(value || '').normalize('NFKC').replace(/[^\p{L}\p{N}\s-]/gu, ' ')).slice(0, max)
+}
+
+export function comparisonSearchQueries(keywords = [], queries = []) {
+  const fallback = keywords.map(word => queryText(word)).filter(word => word.length >= 2).slice(0, 3).join(' ')
+  const seen = new Set()
+  const result = queries.slice(0, 3).map(query => ({ ko: queryText(query.ko), en: queryText(query.en, 180) }))
+    .filter(query => {
+      if (query.ko.length < 2 || seen.has(query.ko)) return false
+      seen.add(query.ko)
+      return true
+    })
+  return result.length ? result : fallback ? [{ ko: fallback, en: '' }] : []
+}
+
+function gdeltSearchQuery(queries) {
+  // DOC searches English machine translations. Quote literal terms so AI text cannot inject operators.
+  const stop = new Set(['a', 'an', 'the', 'of', 'for', 'in', 'on', 'and', 'or', 'to', 'with', 'by'])
+  const groups = queries.map(query => [...new Set(query.en.toLowerCase().split(/\s+/)
+    .filter(word => /^[a-z0-9-]{2,}$/.test(word) && !stop.has(word)))].slice(0, 6)
+    .map(word => '"' + word + '"').join(' ')).filter(Boolean)
+  return groups.length > 1 ? '(' + groups.join(' OR ') + ')' : groups[0] || ''
+}
+
+export async function relatedCandidates(article, keywords = [], { queries = [], signal } = {}) {
+  const searchQueries = comparisonSearchQueries(keywords, queries)
+  if (!searchQueries.length) return { items: [], partial: false }
+  const naver = Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET)
+  const englishQuery = gdeltSearchQuery(searchQueries)
+  const searchGdelt = () => englishQuery
+    ? fromGdelt('', { query: englishQuery, publishedAt: article.publishedAt, signal })
+    : Promise.reject(new AppError('COMPARISON_SEARCH_UNAVAILABLE', '비교 기사 검색어를 준비하지 못했어요.', 503))
+  let responses = await Promise.allSettled(naver
+    ? searchQueries.map(query => fromNaver(query.ko, '', { signal, sort: 'sim' }))
+    : [searchGdelt()])
+  signal?.throwIfAborted()
+  // A failed primary search can use the other provider; RSS is supplementary, never a substitute for topic search.
+  if (naver && (!responses.some(result => result.status === 'fulfilled' && result.value.length))) {
+    responses.push(...await Promise.allSettled([searchGdelt()]))
+  }
+  if (getConfig().rssFeeds.length) {
+    responses.push(...await Promise.allSettled([fromConfiguredRss({ signal })]))
+  }
+  signal?.throwIfAborted()
+  if (!responses.some(result => result.status === 'fulfilled')) {
+    throw new AppError('COMPARISON_SEARCH_UNAVAILABLE', '다른 관점의 기사를 검색하지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
+  }
+  const source = publisherKey(article.sourceUrl)
+  const reference = Date.parse(article.publishedAt)
+  const terms = [...new Set([...keywords, ...searchQueries.flatMap(query => query.ko.split(/\s+/))]
+    .map(word => queryText(word).toLocaleLowerCase('ko')).filter(word => word.length >= 2))]
+  const unique = new Map()
+  for (const result of responses) {
+    if (result.status !== 'fulfilled') continue
+    for (const item of result.value) {
+      const host = publisherKey(item.sourceUrl)
+      if (!host || host === source || /(?:^|\.)naver\.com$/.test(host) || unique.has(item.id)) continue
+      const date = Date.parse(item.publishedAt)
+      if (Number.isFinite(reference) && Number.isFinite(date) && Math.abs(reference - date) > 14 * 86400_000) continue
+      const text = (item.title + ' ' + item.excerpt).toLocaleLowerCase('ko')
+      const score = terms.filter(term => text.includes(term)).length
+      if (score) unique.set(item.id, { item, score, host })
+    }
+  }
+  const sorted = [...unique.values()].sort((a, b) => b.score - a.score)
+  const counts = new Map()
+  const diverse = []
+  // Round-robin publishers before taking a second candidate from any one outlet.
+  for (let round = 0; round < 2; round++) {
+    for (const entry of sorted) {
+      const count = counts.get(entry.host) || 0
+      if (count !== round || diverse.some(item => item.id === entry.item.id)) continue
+      counts.set(entry.host, count + 1)
+      diverse.push(entry.item)
+    }
+  }
+  return { items: diverse.slice(0, 16), partial: responses.some(result => result.status === 'rejected') }
 }
