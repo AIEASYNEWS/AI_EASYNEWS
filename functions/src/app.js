@@ -2,7 +2,9 @@ import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
 import { getConfig, TOPIC_IDS } from './config.js'
-import { requireUser } from './firebase.js'
+import { adminServices, requireUser } from './firebase.js'
+import { getSubscription } from './subscription.js'
+import { registerDevice } from './push.js'
 import { readArticle } from './articles.js'
 import { getNews, relatedCandidates } from './news.js'
 import { buildComparison } from './comparison.js'
@@ -48,10 +50,39 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     response.json(await getNews(query))
   })
   router.post('/articles/preview', async (request, response) => response.json(await readArticle(urlSchema.parse(request.body).sourceUrl)))
+  router.get('/auth/username', async (request, response) => {
+    const id = z.string().regex(/^[a-z0-9_]{4,24}$/).parse(request.query.id)
+    try {
+      await adminServices().auth.getUserByEmail(`${id}@id.easynews.invalid`)
+      response.json({ available: false })
+    } catch (error) {
+      if (error.code !== 'auth/user-not-found') throw error
+      response.json({ available: true })
+    }
+  })
   router.use(async (request, _response, next) => { request.user = await requireUser(request); next() })
+  const memberOnly = (request, _response, next) => next(request.user.anonymous
+    ? new AppError('MEMBER_REQUIRED', '로그인 후 이용해 주세요.', 403) : undefined)
+  router.get('/subscription', memberOnly, async (request, response) => response.json(await getSubscription(request.user)))
+  router.put('/notification-device', memberOnly, async (request, response) => {
+    const { token, remove } = z.object({ token: z.string().min(16).max(4096), remove: z.boolean() }).strict().parse(request.body)
+    response.json(await registerDevice(request.user.uid, token, remove))
+  })
+  router.get('/notification-settings', memberOnly, async (request, response) => {
+    const profile = await getProfile(request.user.uid)
+    response.json({ enabled: profile.notificationsEnabled !== false, topicIds: profile.topicIds })
+  })
+  router.put('/notification-settings', memberOnly, async (request, response) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(request.body)
+    await saveProfile(request.user.uid, { notificationsEnabled: enabled, notificationsChangedAt: Date.now() })
+    response.json({ enabled })
+  })
   router.get('/profile', async (request, response) => response.json(await getProfile(request.user.uid)))
   router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
-  router.get('/quota', async (request, response) => response.json(await getQuota(request.user.uid)))
+  router.get('/quota', async (request, response) => {
+    const plan = await getSubscription(request.user)
+    response.json(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid))
+  })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
   router.get('/recommendations', async (request, response) => {
     const profile = await getProfile(request.user.uid)
@@ -59,13 +90,13 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     const news = await getNews({ topics: profile.topicIds, limit: 12 })
     response.json({ ...news, hasMore: false })
   })
-  router.get('/notifications', async (request, response) => {
+  router.get('/notifications', memberOnly, async (request, response) => {
     const profile = await getProfile(request.user.uid)
-    if (!profile.topicIds?.length) return response.json([])
+    if (profile.notificationsEnabled === false || !profile.topicIds?.length) return response.json([])
     const [news, reads] = await Promise.all([getNews({ topics: profile.topicIds, limit: 20 }), notificationReads(request.user.uid)])
     response.json(news.items.map(item => ({ ...item, read: reads.has(item.id) })))
   })
-  router.post('/notifications/:id/read', async (request, response) => {
+  router.post('/notifications/:id/read', memberOnly, async (request, response) => {
     const id = z.string().regex(/^[a-f0-9]{32}$/).parse(request.params.id)
     response.json(await markNotificationRead(request.user.uid, id))
   })
@@ -86,7 +117,8 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
     const { sourceUrl } = urlSchema.parse(request.body)
-    const settle = await reserveConversion(request.user.uid)
+    const plan = await getSubscription(request.user)
+    const settle = await reserveConversion(request.user.uid, plan.active)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }
     response.on('close', disconnect)

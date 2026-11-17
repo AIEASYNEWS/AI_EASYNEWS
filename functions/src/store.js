@@ -9,7 +9,7 @@ const userRef = uid => adminServices().db.collection('users').doc(uid)
 
 export async function getProfile(uid) {
   const snapshot = await userRef(uid).get()
-  return snapshot.exists ? snapshot.data() : { topicIds: [], completed: false }
+  return { topicIds: [], completed: false, ...snapshot.data() }
 }
 
 export async function saveProfile(uid, profile) {
@@ -26,7 +26,7 @@ export async function getQuota(uid) {
 }
 
 /** A lease counts concurrent requests, expires after a crashed process, and rolls back on failure. */
-export async function reserveConversion(uid) {
+export async function reserveConversion(uid, unlimited = false) {
   const db = adminServices().db
   const ref = userRef(uid).collection('usage').doc(usageDay())
   const leaseId = randomUUID()
@@ -34,7 +34,7 @@ export async function reserveConversion(uid) {
     const snapshot = await transaction.get(ref)
     const count = snapshot.data()?.count || 0
     const pending = Object.fromEntries(Object.entries(snapshot.data()?.pending || {}).filter(([, expiry]) => expiry > Date.now()))
-    if (count + Object.keys(pending).length >= getConfig().freeDailyLimit) throw new AppError('QUOTA_EXCEEDED', '오늘의 변환 횟수를 모두 사용했어요. 내일 다시 이용해 주세요.', 429)
+    if (!unlimited && count + Object.keys(pending).length >= getConfig().freeDailyLimit) throw new AppError('QUOTA_EXCEEDED', '오늘의 변환 횟수를 모두 사용했어요. 내일 다시 이용해 주세요.', 429)
     transaction.set(ref, { count, pending: { ...pending, [leaseId]: Date.now() + 5 * 60_000 } })
   })
   let settled = false
