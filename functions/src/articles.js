@@ -27,7 +27,12 @@ export function parseArticleHtml(html, sourceUrl) {
     let imageUrl
     try { const image = meta('meta[property="og:image"]'); if (image) imageUrl = parsePublicUrl(new URL(image, sourceUrl).href).href } catch { /* 잘못된 이미지 주소는 생략한다. */ }
     const published = meta('meta[property="article:published_time"]') || meta('meta[name="pubdate"]') || meta('meta[name="date"]')
-    const article = new Readability(document.cloneNode(true), { charThreshold: 100 }).parse()
+    const readableDocument = document.cloneNode(true)
+    // This publisher's page includes login prompts and recommendations outside the article.
+    const host = new URL(sourceUrl).hostname
+    const scopedBody = /(^|\.)mk\.co\.kr$/.test(host) ? readableDocument.querySelector('.news_cnt_detail_wrap') : null
+    if (scopedBody && cleanText(scopedBody.textContent).length >= 120) readableDocument.body.replaceChildren(scopedBody.cloneNode(true))
+    const article = new Readability(readableDocument, { charThreshold: 100 }).parse()
     if (!article?.title || cleanText(article.textContent).length < 120) throw new AppError('ARTICLE_UNREADABLE', '기사 본문을 읽지 못했어요. 로그인 없이 볼 수 있는 원문 기사 주소로 시도해 주세요.', 422)
     const parsed = new JSDOM(article.content).window
     for (const element of parsed.document.querySelectorAll('audio,video,script,style,noscript,button')) element.remove()
