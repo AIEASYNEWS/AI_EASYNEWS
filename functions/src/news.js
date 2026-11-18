@@ -12,7 +12,8 @@ const topicQueries = {
   health: '(health OR hospital OR medicine)', culture: '(culture OR film OR music)', lifestyle: '(weather OR travel OR food)',
 }
 const topicLabels = { economy: '경제', politics: '정치', society: '사회', technology: '과학 기술', health: '건강 의료', culture: '문화', lifestyle: '생활' }
-const publisherNames = { 'yna.co.kr': '연합뉴스', 'news.sbs.co.kr': 'SBS 뉴스', 'imnews.imbc.com': 'MBC 뉴스', 'news.kbs.co.kr': 'KBS 뉴스', 'hani.co.kr': '한겨레', 'chosun.com': '조선일보', 'donga.com': '동아일보', 'hankyung.com': '한국경제', 'mk.co.kr': '매일경제', 'khan.co.kr': '경향신문' }
+const naverHubQueries = { economy: '경제 정책', politics: '국회 정치', society: '사회 문제', culture: '문화예술', lifestyle: '생활 정보' }
+const publisherNames = { 'yna.co.kr': '연합뉴스', 'news.sbs.co.kr': 'SBS 뉴스', 'imnews.imbc.com': 'MBC 뉴스', 'news.kbs.co.kr': 'KBS 뉴스', 'hani.co.kr': '한겨레', 'chosun.com': '조선일보', 'donga.com': '동아일보', 'kmib.co.kr': '국민일보', 'hankyung.com': '한국경제', 'mk.co.kr': '매일경제', 'khan.co.kr': '경향신문' }
 
 function plainText(value) { return cleanText(JSDOM.fragment(String(value || '')).textContent) }
 function publisher(url) {
@@ -50,6 +51,34 @@ async function fromNaver(query, topic, { signal, sort = 'date' } = {}) {
   if (!response.ok) throw new AppError('NEWS_UNAVAILABLE', '뉴스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
   const data = await response.json()
   return (data.items || []).map(item => itemFrom({ title: item.title, url: item.originallink || item.link, date: item.pubDate, description: item.description, category: topic })).filter(Boolean)
+}
+
+export async function getNaverHubNews(topic, { clientId, clientSecret }, limit = 10) {
+  const url = new URL('https://naverapihub.apigw.ntruss.com/search/v1/news')
+  url.search = new URLSearchParams({ query: naverHubQueries[topic] || topicLabels[topic], display: String(limit), sort: 'date', format: 'json' }).toString()
+  const unavailable = new AppError('NEWS_UNAVAILABLE', '네이버 뉴스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
+  let response
+  try {
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      redirect: 'error',
+      headers: { 'X-NCP-APIGW-API-KEY-ID': clientId, 'X-NCP-APIGW-API-KEY': clientSecret },
+    })
+  } catch { throw unavailable }
+  if ([401, 403].includes(response.status)) {
+    throw new AppError('NAVER_HUB_AUTH_FAILED', '네이버 뉴스 검색 API 인증을 확인해 주세요.', 503)
+  }
+  if (!response.ok) throw unavailable
+  const result = await response.json().catch(() => null)
+  if (!Array.isArray(result?.items)) throw unavailable
+  // Keep the search result order and the publisher's original URL.
+  const items = result.items.flatMap(item => {
+    const sourceUrl = item?.originallink || item?.link
+    if (typeof sourceUrl !== 'string' || typeof item.title !== 'string') return []
+    const article = itemFrom({ title: item.title, url: sourceUrl, date: item.pubDate, description: item.description, category: topic })
+    return article ? [{ ...article, sourceUrl }] : []
+  })
+  return { items, total: items.length, hasMore: false, source: 'naver-hub' }
 }
 
 async function fromGdelt(topic, { query = '', publishedAt, worldwide = false, signal } = {}) {

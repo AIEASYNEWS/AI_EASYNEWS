@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
@@ -6,7 +7,7 @@ import { adminServices, requireUser } from './firebase.js'
 import { getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle } from './articles.js'
-import { getNews, relatedCandidates } from './news.js'
+import { getNaverHubNews, getNews, relatedCandidates } from './news.js'
 import { buildComparison } from './comparison.js'
 import { assertAiConfigured, rewriteArticle, compareArticles, answerQuestion } from './ai.js'
 import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead } from './store.js'
@@ -15,6 +16,7 @@ const urlSchema = z.object({ sourceUrl: z.string().url().max(2048) }).strict()
 const profileSchema = z.object({ topicIds: z.array(z.enum(TOPIC_IDS)).max(7).refine(ids => new Set(ids).size === ids.length), completed: z.boolean() }).strict()
 const questionSchema = z.object({ articleId: z.string().regex(/^[a-f0-9]{32}$/), sourceUrl: z.string().url().max(2048), sentence: z.string().trim().min(1).max(5000), question: z.string().trim().min(1).max(1000) }).strict()
 const rate = new Map()
+const homeNewsLimit = 10
 
 export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles } = {}) {
   const app = express()
@@ -84,11 +86,24 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     response.json(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid))
   })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
-  router.get('/recommendations', async (request, response) => {
+  router.get('/recommendations', memberOnly, async (request, response) => {
     const profile = await getProfile(request.user.uid)
-    if (!profile.topicIds?.length) return response.json({ items: [], total: 0, hasMore: false })
-    const news = await getNews({ topics: profile.topicIds, limit: 12 })
-    response.json({ ...news, hasMore: false })
+    const topics = (profile.topicIds ?? []).filter(topic => TOPIC_IDS.includes(topic))
+    const { naverHub } = getConfig()
+    if (naverHub) {
+      const searchTopics = topics.length ? topics : [TOPIC_IDS[randomInt(TOPIC_IDS.length)]]
+      const share = Math.floor(homeNewsLimit / searchTopics.length)
+      const remainder = homeNewsLimit % searchTopics.length
+      const results = await Promise.all(searchTopics.map((topic, index) => getNaverHubNews(topic, naverHub, share + Number(index < remainder))))
+      const items = results.flatMap(result => result.items)
+      return response.json({ items, total: items.length, hasMore: false, source: 'naver-hub' })
+    }
+    const news = await getNews({ topics, limit: topics.length ? homeNewsLimit : 30 })
+    if (topics.length) return response.json({ ...news, hasMore: false })
+    const remaining = news.items.map((_, index) => index)
+    const selected = new Set()
+    while (remaining.length && selected.size < homeNewsLimit) selected.add(remaining.splice(randomInt(remaining.length), 1)[0])
+    response.json({ ...news, items: news.items.filter((_, index) => selected.has(index)), hasMore: false })
   })
   router.get('/notifications', memberOnly, async (request, response) => {
     const profile = await getProfile(request.user.uid)
