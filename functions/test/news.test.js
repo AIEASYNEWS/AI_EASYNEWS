@@ -119,3 +119,18 @@ test('Naver failure can fall back to issue search without losing the partial res
   assert.equal(result.items.length, 1)
   assert.equal(result.partial, true)
 })
+
+test('foreign news RSS exposes the publisher link even when GDELT is unavailable and site language metadata is wrong', async context => {
+  context.mock.method(globalThis, 'fetch', async value => {
+    const url = new URL(value)
+    if (url.hostname !== 'www.bing.com') return new Response('unavailable', { status: 503 })
+    if (url.searchParams.get('setlang') === 'ko-kr') return new Response('<rss><channel><title>뉴스</title></channel></rss>')
+    assert.equal(url.searchParams.get('q'), 'North Line commuters')
+    return new Response('<rss><channel><item><title>北線の新時刻表</title><link>http://www.bing.com/news/apiclick.aspx?ref=Rss&amp;url=https%3A%2F%2Ftransit.example%2Farticle</link></item></channel></rss>')
+  })
+  const result = await relatedCandidates({ ...comparisonArticle, sourceLanguage: 'ko', originalParagraphs: ['The council will change train schedules.'] }, ['통근'], {
+    queries: [{ ko: '북부 철도 통근', en: 'North Line commuters' }],
+  })
+  assert.deepEqual(result.items.map(item => item.sourceUrl), ['https://transit.example/article'])
+  assert.equal(result.partial, true)
+})
