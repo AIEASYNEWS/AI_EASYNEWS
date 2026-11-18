@@ -122,9 +122,11 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/questions', async (request, response) => {
     assertAiConfigured()
     const { articleId, sourceUrl, sentence, question } = questionSchema.parse(request.body)
-    const article = await getArticle(request.user.uid, articleId).catch(error => {
+    const article = await getArticle(request.user.uid, articleId).catch(async error => {
       if (error.code !== 'ARTICLE_NOT_FOUND') throw error
-      return readArticle(sourceUrl)
+      const original = await articleReader(sourceUrl)
+      if (original.id !== articleId) throw new AppError('ARTICLE_NOT_FOUND', '선택한 문장이 있는 기사를 찾지 못했어요.', 404)
+      return original
     })
     await reserveQuestion(request.user.uid)
     response.json({ answer: await answerQuestion(article, sentence, question) })

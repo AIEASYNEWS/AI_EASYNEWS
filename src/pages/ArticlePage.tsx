@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArticleQuestionSheet } from '../components/article/ArticleQuestionSheet'
 import { PageLayout } from '../components/layout/PageLayout'
 import { Icon } from '../components/ui/Icon'
@@ -20,14 +20,27 @@ export function ArticlePage({ article, original = false, onBack, onCompare, onCo
   const [selection, setSelection] = useState<{ text: string; index: number } | null>(null)
   const [questionSentence, setQuestionSentence] = useState('')
   const summaryRef = useRef<HTMLElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const easy = tab === 'easy'
   const paragraphs = useMemo(() => readableArticleParagraphs(easy ? article.easyParagraphs : article.originalParagraphs), [easy, article.easyParagraphs, article.originalParagraphs])
   const [copyStatus, setCopyStatus] = useState('')
 
-  function captureSelection(index: number) {
-    const text = window.getSelection()?.toString().trim()
-    if (text) setSelection({ text, index })
-  }
+  useEffect(() => {
+    function trackSelection() {
+      const selected = window.getSelection()
+      const body = bodyRef.current
+      if (!selected || selected.isCollapsed || !body?.contains(selected.anchorNode) || !body.contains(selected.focusNode)) {
+        setSelection(null)
+        return
+      }
+      const end = selected.getRangeAt(0).endContainer
+      const paragraph = (end instanceof Element ? end : end.parentElement)?.closest<HTMLElement>('[data-paragraph-index]')
+      const text = selected.toString().trim().slice(0, 5000)
+      setSelection(text && paragraph ? { text, index: Number(paragraph.dataset.paragraphIndex) } : null)
+    }
+    document.addEventListener('selectionchange', trackSelection)
+    return () => document.removeEventListener('selectionchange', trackSelection)
+  }, [])
 
   return (
     <>
@@ -44,15 +57,14 @@ export function ArticlePage({ article, original = false, onBack, onCompare, onCo
             {easy && !article.easyParagraphs.length && <div className="mt-6"><p className="text-sm text-muted">쉬운말로 변환하면 본문과 핵심 요약을 볼 수 있어요.</p><Button className="mt-4" onClick={onConvert}>쉬운말로 변환하기</Button></div>}
             <div className="mt-6 flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-1 text-xs leading-[18px] ${easy ? 'bg-brand-soft text-brand' : 'border border-line'}`}>{easy ? '쉬운 한국어' : '원문'}</span><span className="text-xs leading-[18px] text-muted">{easy ? 'AI가 기사 내용을 쉽게 풀어 썼어요' : '언론사가 쓴 기사 그대로예요'}</span></div>
             {easy && <div className="mt-6 flex gap-2"><button type="button" onClick={() => summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">핵심 요약<Icon name="chevron-down" /></button>{(article.reports.length > 0 || article.comparisonNotice) && <button type="button" onClick={onCompare} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">언론사 비교{article.reports.length > 0 && ` ${article.reports.length}`}</button>}</div>}
-            <div className="mt-6 flex flex-col gap-6">
+            <div ref={bodyRef} className="mt-6 flex flex-col gap-6">
               {paragraphs.map((paragraph, index) => (
                 <div key={`${tab}-${index}`} className="relative">
-                  {selection?.index === index && <div className="absolute right-0 -top-12 z-10 flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-xs leading-[18px] text-white shadow-md"><button type="button" onClick={() => { void navigator.clipboard.writeText(selection.text).then(() => setCopyStatus('문장을 복사했어요.')).catch(() => setCopyStatus('문장을 복사하지 못했어요. 다시 시도해 주세요.')); setSelection(null) }} className="cursor-pointer px-1 focus-visible:outline-2">복사</button><span aria-hidden="true" className="h-4 border-l border-white/40" /><button type="button" onClick={() => setQuestionSentence(selection.text)} className="flex cursor-pointer items-center gap-1 focus-visible:outline-2"><Icon name="sparkles-light" />AI에게 물어보기</button></div>}
+                  {selection?.index === index && <div onMouseDown={event => event.preventDefault()} className="absolute right-0 -top-12 z-10 flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-xs leading-[18px] text-white shadow-md"><button type="button" onClick={() => { void navigator.clipboard.writeText(selection.text).then(() => setCopyStatus('문장을 복사했어요.')).catch(() => setCopyStatus('문장을 복사하지 못했어요. 다시 시도해 주세요.')); window.getSelection()?.removeAllRanges(); setSelection(null) }} className="cursor-pointer px-1 focus-visible:outline-2">복사</button><span aria-hidden="true" className="h-4 border-l border-white/40" /><button type="button" onClick={() => { setQuestionSentence(selection.text); window.getSelection()?.removeAllRanges(); setSelection(null) }} className="flex cursor-pointer items-center gap-1 focus-visible:outline-2"><Icon name="sparkles-light" />AI에게 물어보기</button></div>}
                   <p
+                    data-paragraph-index={index}
                     tabIndex={0}
                     aria-keyshortcuts="Enter"
-                    onMouseUp={() => captureSelection(index)}
-                    onTouchEnd={() => captureSelection(index)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         event.preventDefault()
