@@ -110,13 +110,13 @@ export function RelatedReportsCarousel({ reports, onRelated }: RelatedReportsCar
             key={report.id}
             data-report-card
             type="button"
-            aria-label={(index + 1) + '번 비교 기사: ' + report.title}
+            aria-label={`${index + 1}번 비교 기사, ${report.relation === 'opposing' ? '반대 주장을 다룬 보도, ' : ''}${report.koreanTitle || report.title}`}
             onClick={() => onRelated(report)}
             className="row-span-5 grid grid-rows-subgrid content-start items-start snap-start select-none rounded-xl border border-line p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
           >
-            <div className="flex items-start"><span className="rounded bg-surface px-2 py-1 text-xs leading-[18px] text-secondary">{report.viewpoint || (report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점')}</span></div>
+            <div className="flex flex-wrap gap-1 text-xs leading-[18px]">{report.relation && <span className="rounded bg-brand-soft px-2 py-1 font-bold text-brand">{report.relation === 'opposing' ? '반대 주장을 다룬 보도' : '다른 접근을 다룬 보도'}</span>}{(report.viewpoint || !report.relation) && <span className="rounded bg-surface px-2 py-1 text-secondary">{report.viewpoint || (report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점')}</span>}</div>
             <p className="mt-3 text-xs leading-[18px] text-muted">{report.publisher} · {formatDate(report.publishedAt)}</p>
-            <h3 className="mt-2 text-base leading-6 font-bold break-keep [overflow-wrap:anywhere]">{report.title}</h3>
+            <h3 className="mt-2 text-base leading-6 font-bold break-keep [overflow-wrap:anywhere]">{report.koreanTitle || report.title}</h3>
             <p className="mt-2 text-sm leading-[21px] break-keep text-muted [overflow-wrap:anywhere]">원문과 다른 점: {report.focus}</p>
             <div className={report.originalEvidence && report.relatedEvidence ? 'mt-3 space-y-2 border-t border-line pt-3 text-xs leading-[18px] text-muted' : ''}>
               {report.originalEvidence && report.relatedEvidence && <><p>원문 근거: “{report.originalEvidence}”</p><p>비교 기사 근거: “{report.relatedEvidence}”</p></>}

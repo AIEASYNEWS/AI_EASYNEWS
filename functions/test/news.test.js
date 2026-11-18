@@ -89,6 +89,20 @@ test('GDELT comparison searches English issue terms and the article date window'
   assert.equal(result.items.length, 1)
 })
 
+test('a focused second query reaches the reading budget despite many similar outlets', async context => {
+  naverEnvironment(context)
+  context.mock.method(globalThis, 'fetch', async value => {
+    const counterpoint = new URL(value).searchParams.get('query').includes('주민')
+    const items = counterpoint ? [{ title: '시험장 주민 반박', originallink: 'https://resident.example/report' }]
+      : Array.from({ length: 16 }, (_, i) => ({ title: '시험장 차단 대책 감독 교육청', originallink: `https://outlet${i}.example/report` }))
+    return Response.json({ items })
+  })
+  const found = await relatedCandidates(comparisonArticle, ['시험장', '차단', '교육청', '감독'], {
+    queries: [{ ko: '시험장 차단 대책', en: '' }, { ko: '시험장 주민 반박', en: '' }],
+  })
+  assert.equal(found.items[1].sourceUrl, 'https://resident.example/report')
+})
+
 test('comparison reports provider failure and honors cancellation instead of claiming no articles exist', async context => {
   context.mock.method(globalThis, 'fetch', async () => new Response('unavailable', { status: 503 }))
   await assert.rejects(relatedCandidates(comparisonArticle, ['수능'], { queries: comparisonQueries }), { code: 'COMPARISON_SEARCH_UNAVAILABLE' })
@@ -103,5 +117,20 @@ test('Naver failure can fall back to issue search without losing the partial res
     : new Response(JSON.stringify({ articles: [{ title: '수능 부정행위 대응', url: 'https://www.hani.co.kr/fallback', seendate: '20261116T090000Z' }] })))
   const result = await relatedCandidates(comparisonArticle, ['수능'], { queries: comparisonQueries })
   assert.equal(result.items.length, 1)
+  assert.equal(result.partial, true)
+})
+
+test('foreign news RSS exposes the publisher link even when GDELT is unavailable and site language metadata is wrong', async context => {
+  context.mock.method(globalThis, 'fetch', async value => {
+    const url = new URL(value)
+    if (url.hostname !== 'www.bing.com') return new Response('unavailable', { status: 503 })
+    if (url.searchParams.get('setlang') === 'ko-kr') return new Response('<rss><channel><title>뉴스</title></channel></rss>')
+    assert.equal(url.searchParams.get('q'), 'North Line commuters')
+    return new Response('<rss><channel><item><title>北線の新時刻表</title><link>http://www.bing.com/news/apiclick.aspx?ref=Rss&amp;url=https%3A%2F%2Ftransit.example%2Farticle</link></item></channel></rss>')
+  })
+  const result = await relatedCandidates({ ...comparisonArticle, sourceLanguage: 'ko', originalParagraphs: ['The council will change train schedules.'] }, ['통근'], {
+    queries: [{ ko: '북부 철도 통근', en: 'North Line commuters' }],
+  })
+  assert.deepEqual(result.items.map(item => item.sourceUrl), ['https://transit.example/article'])
   assert.equal(result.partial, true)
 })

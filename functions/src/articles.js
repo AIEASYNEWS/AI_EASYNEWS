@@ -41,12 +41,13 @@ export function parseArticleHtml(html, sourceUrl) {
     const paragraphs = parsed.document.body.textContent.split(/\n+/).map(cleanText).filter(text => text.length > 8)
     parsed.close()
     const originalParagraphs = paragraphs.length ? paragraphs : [cleanText(article.textContent)]
+    const language = (article.lang || document.documentElement.lang || meta('meta[property="og:locale"]')).split(/[-_]/)[0].toLowerCase()
     if (originalParagraphs.join('\n').length > 40_000) throw new AppError('ARTICLE_TOO_LONG', '기사가 너무 길어요. 더 짧은 기사 주소로 시도해 주세요.', 422)
     return {
       id: articleId(sourceUrl), topicId: inferTopic(article.title), title: cleanText(article.title), easyTitle: cleanText(article.title),
       publisher: article.siteName || meta('meta[property="og:site_name"]') || new URL(sourceUrl).hostname.replace(/^www\./, ''),
       publishedAt: published && !Number.isNaN(Date.parse(published)) ? new Date(published).toISOString() : '',
-      sourceUrl, ...(imageUrl ? { imageUrl } : {}),
+      sourceUrl, ...(language && /^[a-z]{2,3}$/.test(language) ? { sourceLanguage: language } : {}), ...(imageUrl ? { imageUrl } : {}),
       excerpt: originalParagraphs.join(' ').slice(0, 700), originalParagraphs,
       easyParagraphs: [], summary: [], comparison: '', reports: [],
     }

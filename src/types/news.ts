@@ -8,6 +8,8 @@ export interface RelatedReport {
   title: string
   focus: string
   kind: 'same-event' | 'different-perspective'
+  relation?: 'opposing' | 'alternative'
+  koreanTitle?: string
   viewpoint?: string
   originalEvidence?: string
   relatedEvidence?: string
@@ -28,6 +30,7 @@ export interface NewsItem {
 }
 
 export interface NewsArticle extends NewsItem {
+  sourceLanguage?: string
   easyTitle: string
   easyParagraphs: string[]
   originalParagraphs: string[]
@@ -35,6 +38,7 @@ export interface NewsArticle extends NewsItem {
   comparison: string
   reports: RelatedReport[]
   originalFocus?: string
-  comparisonStatus?: 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'analysis-failed' | 'timeout'
+  sourcePositions?: { speaker: string; evidence: string }[]
+  comparisonStatus?: 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'evidence-unverified' | 'analysis-failed' | 'timeout'
   comparisonNotice?: string
 }

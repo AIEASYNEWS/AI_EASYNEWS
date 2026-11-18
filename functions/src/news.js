@@ -52,9 +52,9 @@ async function fromNaver(query, topic, { signal, sort = 'date' } = {}) {
   return (data.items || []).map(item => itemFrom({ title: item.title, url: item.originallink || item.link, date: item.pubDate, description: item.description, category: topic })).filter(Boolean)
 }
 
-async function fromGdelt(topic, { query = '', publishedAt, signal } = {}) {
+async function fromGdelt(topic, { query = '', publishedAt, worldwide = false, signal } = {}) {
   const url = new URL('https://api.gdeltproject.org/api/v2/doc/doc')
-  const params = new URLSearchParams({ query: `${query || topicQueries[topic] || ''} sourcelang:korean`.trim(), mode: 'artlist', format: 'json', maxrecords: '250', sort: query ? 'hybridrel' : 'datedesc' })
+  const params = new URLSearchParams({ query: [query || topicQueries[topic], !worldwide && 'sourcelang:korean'].filter(Boolean).join(' '), mode: 'artlist', format: 'json', maxrecords: '250', sort: query ? 'hybridrel' : 'datedesc' })
   const reference = Date.parse(publishedAt)
   if (query && Number.isFinite(reference)) {
     const format = time => new Date(time).toISOString().replace(/\D/g, '').slice(0, 14)
@@ -159,21 +159,55 @@ function gdeltSearchQuery(queries) {
   return groups.length > 1 ? '(' + groups.join(' OR ') + ')' : groups[0] || ''
 }
 
+async function searchNewsRss(query, worldwide, signal) {
+  const url = new URL('https://www.bing.com/news/search')
+  url.search = new URLSearchParams({ q: query, format: 'rss', setlang: worldwide ? 'en-us' : 'ko-kr' }).toString()
+  const timeout = AbortSignal.timeout(10_000)
+  const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
+  if (!response.ok) throw new Error('News RSS unavailable')
+  const feed = new XMLParser({ processEntities: false }).parse(await response.text()).rss?.channel
+  if (!feed) throw new Error('Invalid news RSS response')
+  const entries = Array.isArray(feed.item) ? feed.item : feed.item ? [feed.item] : []
+  return entries.flatMap(entry => {
+    try {
+      const link = parsePublicUrl(String(entry.link).replaceAll('&amp;', '&'))
+      const destination = /(^|\.)bing\.com$/.test(link.hostname) ? link.searchParams.get('url') : link.href
+      if (!destination) return []
+      const item = itemFrom({ title: entry.title, url: destination, date: entry.pubDate, description: entry.description })
+      return item ? [item] : []
+    } catch { return [] }
+  })
+}
+
 export async function relatedCandidates(article, keywords = [], { queries = [], signal } = {}) {
+  // International editions sometimes inherit the Korean site's HTML language tag.
+  const sample = article.originalParagraphs?.slice(0, 5).join(' ').slice(0, 1500) || article.title
+  const letters = sample.match(/\p{L}/gu)?.length || 0
+  const hangul = sample.match(/\p{Script=Hangul}/gu)?.length || 0
+  const worldwide = letters ? hangul / letters < 0.15 : Boolean(article.sourceLanguage && article.sourceLanguage !== 'ko')
   const searchQueries = comparisonSearchQueries(keywords, queries)
   if (!searchQueries.length) return { items: [], partial: false }
   const naver = Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET)
-  const englishQuery = gdeltSearchQuery(searchQueries)
+  const englishQuery = worldwide
+    ? gdeltSearchQuery([searchQueries.at(-1)]) || gdeltSearchQuery([{ en: article.title }])
+    : gdeltSearchQuery(searchQueries)
   const searchGdelt = () => englishQuery
-    ? fromGdelt('', { query: englishQuery, publishedAt: article.publishedAt, signal })
+    ? fromGdelt('', { query: englishQuery, publishedAt: article.publishedAt, worldwide, signal })
     : Promise.reject(new AppError('COMPARISON_SEARCH_UNAVAILABLE', '비교 기사 검색어를 준비하지 못했어요.', 503))
-  let responses = await Promise.allSettled(naver
-    ? searchQueries.map(query => fromNaver(query.ko, '', { signal, sort: 'sim' }))
-    : [searchGdelt()])
+  const rssTerms = searchQueries.map(query => worldwide ? query.en : query.ko).filter(Boolean)
+  if (worldwide && !rssTerms.length) rssTerms.push(article.title)
+  const [targetedResults, gdeltResults, localResults] = await Promise.all([
+    worldwide || !naver ? Promise.allSettled([...new Set(rssTerms)].map(term => searchNewsRss(term, worldwide, signal))) : [],
+    worldwide || !naver ? Promise.allSettled([searchGdelt()]) : [],
+    naver ? Promise.allSettled(searchQueries.map(query => fromNaver(query.ko, '', { signal, sort: 'sim' })))
+      : worldwide ? Promise.allSettled([searchNewsRss(searchQueries[0].ko, false, signal)]) : [],
+  ])
+  const globalResults = worldwide ? [...targetedResults, ...gdeltResults] : []
+  const responses = [...targetedResults, ...gdeltResults, ...localResults]
   signal?.throwIfAborted()
   // A failed primary search can use the other provider; RSS is supplementary, never a substitute for topic search.
-  if (naver && (!responses.some(result => result.status === 'fulfilled' && result.value.length))) {
-    responses.push(...await Promise.allSettled([searchGdelt()]))
+  if (!worldwide && naver && (!responses.some(result => result.status === 'fulfilled' && result.value.length))) {
+    responses.push(...await Promise.allSettled([searchGdelt(), ...rssTerms.map(term => searchNewsRss(term, false, signal))]))
   }
   if (getConfig().rssFeeds.length) {
     responses.push(...await Promise.allSettled([fromConfiguredRss({ signal })]))
@@ -184,7 +218,7 @@ export async function relatedCandidates(article, keywords = [], { queries = [], 
   }
   const source = publisherKey(article.sourceUrl)
   const reference = Date.parse(article.publishedAt)
-  const terms = [...new Set([...keywords, ...searchQueries.flatMap(query => query.ko.split(/\s+/))]
+  const terms = [...new Set([...keywords, ...searchQueries.flatMap(query => (worldwide ? query.ko + ' ' + query.en : query.ko).split(/\s+/))]
     .map(word => queryText(word).toLocaleLowerCase('ko')).filter(word => word.length >= 2))]
   const unique = new Map()
   for (const result of responses) {
@@ -196,19 +230,43 @@ export async function relatedCandidates(article, keywords = [], { queries = [], 
       if (Number.isFinite(reference) && Number.isFinite(date) && Math.abs(reference - date) > 14 * 86400_000) continue
       const text = (item.title + ' ' + item.excerpt).toLocaleLowerCase('ko')
       const score = terms.filter(term => text.includes(term)).length
-      if (score) unique.set(item.id, { item, score, host })
+      // Global search matches translated article bodies, including those with non-Latin headlines.
+      if (score || globalResults.includes(result)) unique.set(item.id, { item, score, host, text })
     }
   }
   const sorted = [...unique.values()].sort((a, b) => b.score - a.score)
+  // Give each issue query an early slot in the body-reading budget. A large
+  // cluster covering the first angle should not crowd out a sourced rebuttal.
+  const angleLists = searchQueries.map(query => {
+    const words = [...new Set(query.ko.toLowerCase().split(/\s+/).filter(word => word.length >= 2))]
+    return sorted.map(entry => ({ entry, hits: words.filter(word => entry.text.includes(word)).length }))
+      .filter(match => match.hits > 0)
+      .sort((a, b) => b.hits - a.hits || b.entry.score - a.entry.score)
+      .map(match => match.entry)
+  })
   const counts = new Map()
+  const selected = new Set()
   const diverse = []
+  function select(entry) {
+    diverse.push(entry.item)
+    selected.add(entry.item.id)
+    counts.set(entry.host, (counts.get(entry.host) || 0) + 1)
+  }
+  for (const result of globalResults) {
+    if (result.status !== 'fulfilled') continue
+    const first = result.value.map(item => unique.get(item.id)).find(entry => entry && !counts.has(entry.host))
+    if (first) select(first)
+  }
+  for (const list of angleLists) {
+    const first = list.find(entry => !counts.has(entry.host))
+    if (first) select(first)
+  }
   // Round-robin publishers before taking a second candidate from any one outlet.
   for (let round = 0; round < 2; round++) {
     for (const entry of sorted) {
       const count = counts.get(entry.host) || 0
-      if (count !== round || diverse.some(item => item.id === entry.item.id)) continue
-      counts.set(entry.host, count + 1)
-      diverse.push(entry.item)
+      if (count !== round || selected.has(entry.item.id)) continue
+      select(entry)
     }
   }
   return { items: diverse.slice(0, 16), partial: responses.some(result => result.status === 'rejected') }

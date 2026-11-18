@@ -18,50 +18,79 @@ export async function buildComparison(article, keywords, {
 } = {}) {
   const comparisonSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(95_000)]) : AbortSignal.timeout(95_000)
   let stage = 'search'
+  let reports = []
+  let originalFocus = ''
+  const matched = partial => ({
+    reports, originalFocus, comparison: reports.map(report => report.focus).filter(Boolean).join('\n\n'),
+    comparisonStatus: partial ? 'partial' : 'ready',
+    ...(partial ? { comparisonNotice: '일부 기사 검색이나 비교를 완료하지 못해, 확인한 보도만 보여드려요.' } : {}),
+  })
   try {
     const search = await findRelated(article, keywords, { queries, signal: comparisonSignal })
     comparisonSignal.throwIfAborted()
     // Preserve the existing injection contract used by local/emulator callers.
     const candidates = (Array.isArray(search) ? search : search.items).slice(0, 16)
     if (!candidates.length) return empty(search.partial ? 'search-unavailable' : 'no-candidates')
-    stage = 'read'
-    const related = []
     const seenUrls = new Set([article.sourceUrl])
     const seenText = new Set([article.originalParagraphs.join('').replace(/\s+/g, '')])
     const publisherCounts = new Map()
     const sourcePublisher = publisherKey(article.sourceUrl)
     let failures = 0
-    // Read three at a time. A blocked/paywalled site leaves room for later candidates.
-    for (let offset = 0; offset < candidates.length && related.length < 8; offset += 3) {
-      comparisonSignal.throwIfAborted()
-      const batch = await Promise.allSettled(candidates.slice(offset, offset + 3).map(item =>
-        articleReader(item.sourceUrl, AbortSignal.any([comparisonSignal, AbortSignal.timeout(8000)]))))
-      for (const result of batch) {
-        if (result.status === 'rejected') { failures++; continue }
-        const item = result.value
-        const key = publisherKey(item.sourceUrl)
-        const text = item.originalParagraphs.join('').replace(/\s+/g, '')
-        if (!text || !key || key === sourcePublisher || seenUrls.has(item.sourceUrl) || seenText.has(text) || (publisherCounts.get(key) || 0) >= 2 || related.length >= 8) continue
-        seenUrls.add(item.sourceUrl)
-        seenText.add(text)
-        publisherCounts.set(key, (publisherCounts.get(key) || 0) + 1)
-        related.push(item)
+    let compared = 0
+    let unverified = false
+    let offset = 0
+    while (offset < candidates.length) {
+      stage = 'read'
+      const related = []
+      while (offset < candidates.length && related.length < 8) {
+        comparisonSignal.throwIfAborted()
+        const next = candidates.slice(offset, offset + Math.min(3, 8 - related.length))
+        offset += next.length
+        const batch = await Promise.allSettled(next.map(item =>
+          articleReader(item.sourceUrl, AbortSignal.any([comparisonSignal, AbortSignal.timeout(8000)]))))
+        for (const result of batch) {
+          if (result.status === 'rejected') { failures++; continue }
+          const item = result.value
+          const key = publisherKey(item.sourceUrl)
+          const text = item.originalParagraphs.join('').replace(/\s+/g, '')
+          if (!text || !key || key === sourcePublisher || seenUrls.has(item.sourceUrl) || seenText.has(text) || (publisherCounts.get(key) || 0) >= 2) continue
+          seenUrls.add(item.sourceUrl)
+          seenText.add(text)
+          publisherCounts.set(key, (publisherCounts.get(key) || 0) + 1)
+          related.push(item)
+        }
       }
+      comparisonSignal.throwIfAborted()
+      if (!related.length) break
+      stage = 'analysis'
+      const result = await compare(article, related, comparisonSignal)
+      comparisonSignal.throwIfAborted()
+      compared += related.length
+      unverified ||= result.unverified
+      const hasOpposition = result.reports.some(report => report.relation === 'opposing')
+      if (result.originalFocus && (!originalFocus || hasOpposition)) originalFocus = result.originalFocus
+      const ordered = [...reports, ...result.reports].sort((a, b) => Number(b.relation === 'opposing') - Number(a.relation === 'opposing'))
+      const outlets = new Set()
+      reports = ordered.filter(report => {
+        const outlet = publisherKey(report.sourceUrl) || report.publisher || report.id
+        if (outlets.has(outlet)) return false
+        outlets.add(outlet)
+        return true
+      }).slice(0, 4)
+      if (hasOpposition) break
     }
-    comparisonSignal.throwIfAborted()
-    if (!related.length) return empty('read-failed')
-    stage = 'analysis'
-    const result = await compare(article, related, comparisonSignal)
-    comparisonSignal.throwIfAborted()
-    if (!result.reports.length) return empty('no-distinct-perspective')
-    const partial = failures > 0 || Boolean(search.partial)
-    return {
-      ...result, comparisonStatus: partial ? 'partial' : 'ready',
-      ...(partial ? { comparisonNotice: '일부 기사에 접근하지 못해, 본문을 확인한 보도만 비교했어요.' } : {}),
+    if (!compared) return empty('read-failed')
+    if (!reports.length) {
+      const status = unverified ? 'evidence-unverified' : 'no-distinct-perspective'
+      const reason = unverified ? '관점 차이를 뒷받침할 출처와 원문 인용을 검증하지 못했어요.' : '같은 쟁점을 다르게 설명한 근거를 확인하지 못했어요.'
+      const limitation = failures || search.partial ? ' 일부 검색 또는 본문 읽기는 완료하지 못했어요.' : ''
+      return { ...empty(status), comparisonNotice: `다른 언론사 기사 ${compared}건을 비교했지만 ${reason}${limitation}` }
     }
+    return matched(failures > 0 || Boolean(search.partial))
   } catch (error) {
     signal?.throwIfAborted()
     console.warn('EasyNews comparison incomplete', { stage, code: error.code || error.name || 'UNKNOWN' })
+    if (reports.length) return matched(true)
     return empty(comparisonSignal.aborted ? 'timeout' : stage === 'search' ? 'search-unavailable' : stage === 'read' ? 'read-failed' : 'analysis-failed')
   }
 }

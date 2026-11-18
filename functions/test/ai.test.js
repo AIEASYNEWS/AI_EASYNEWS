@@ -25,6 +25,21 @@ test('malformed AI output and provider credit errors fail honestly', async conte
   await assert.rejects(rewriteArticle(article), { code: 'AI_CREDITS_EXHAUSTED' })
 })
 
+test('rewrite retains competing attributed passages from the original without external reports', async context => {
+  const proposals = [
+    { speaker: '주민 대표', evidence: '주민 대표는 사업 일정을 공개해야 한다고 말했다.' },
+    { speaker: '시청', evidence: '시청은 협의가 끝나야 일정을 정할 수 있다고 답했다.' },
+  ]
+  context.mock.method(globalThis, 'fetch', async () => aiResponse({
+    easyTitle: '사업 일정에 관한 논의', easyParagraphs: ['사업 일정을 논의했어요.'],
+    summary: ['주민과 시청이 다른 입장을 밝혔어요.'], keywords: ['사업 일정'], topicId: 'society',
+    sourcePositions: [...proposals, { ...proposals[0], speaker: '법원' },
+      { speaker: '시청', evidence: '시청은 사업 취소를 결정했다고 발표했다.' }],
+  }))
+  const rewritten = await rewriteArticle({ ...article, originalParagraphs: proposals.map(p => p.evidence) })
+  assert.deepEqual(rewritten.sourcePositions, proposals)
+})
+
 test('comparison retains only distinct perspectives grounded in both article bodies', async context => {
   const valid = { id: 'real', focus: '원문은 금리 유지, 비교 기사는 대출 부담을 설명해요.', kind: 'different-perspective', viewpoint: '대출자 영향', originalEvidence: article.originalParagraphs[0], relatedEvidence: '대출자들은 이자 부담이 계속된다고 설명했습니다.' }
   const related = { ...article, id: 'real', publisher: '실제 언론사', sourceUrl: 'https://example.org/news', originalParagraphs: [valid.relatedEvidence] }

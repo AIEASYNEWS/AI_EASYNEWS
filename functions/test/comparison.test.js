@@ -61,3 +61,45 @@ test('user cancellation propagates rather than saving an empty comparison', asyn
     signal: controller.signal, findRelated: async () => [],
   }), { name: 'AbortError' })
 })
+
+test('a late opposing report outranks the alternative found among the first eight bodies', async () => {
+  const items = Array.from({ length: 14 }, (_, i) => candidate(i))
+  const batches = []
+  const result = await buildComparison(original, [], {
+    findRelated: async () => items,
+    articleReader: async url => items.find(item => item.sourceUrl === url),
+    compare: async (_original, batch) => {
+      batches.push(batch.length)
+      const counterpoint = batch.find(item => item.id === '12')
+      const item = counterpoint || batch[0]
+      return { reports: [{ ...item, relation: counterpoint ? 'opposing' : 'alternative', focus: item.id }] }
+    },
+  })
+  assert.deepEqual(batches, [8, 6])
+  assert.deepEqual(result.reports.map(item => item.id), ['12', '0'])
+  assert.equal(result.comparison, '12\n\n0')
+})
+
+test('a verified alternative remains available if a later comparison fails', async () => {
+  const items = Array.from({ length: 10 }, (_, i) => candidate(i))
+  const result = await buildComparison(original, [], {
+    findRelated: async () => items,
+    articleReader: async url => items.find(item => item.sourceUrl === url),
+    compare: async (_original, batch) => {
+      if (batch.length < 8) throw new Error('provider unavailable')
+      return { reports: [{ ...batch[0], relation: 'alternative', focus: '현장 영향' }] }
+    },
+  })
+  assert.equal(result.comparisonStatus, 'partial')
+  assert.equal(result.reports[0].focus, '현장 영향')
+})
+
+test('an unverified comparison states the checked count and partial coverage', async () => {
+  const result = await buildComparison(original, [], {
+    findRelated: async () => ({ items: [candidate(1)], partial: true }),
+    articleReader: async () => candidate(1),
+    compare: async () => ({ reports: [], unverified: true }),
+  })
+  assert.equal(result.comparisonStatus, 'evidence-unverified')
+  assert.match(result.comparisonNotice, /1건.*검증하지 못.*일부/)
+})
