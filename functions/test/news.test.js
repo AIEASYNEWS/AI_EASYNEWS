@@ -89,6 +89,20 @@ test('GDELT comparison searches English issue terms and the article date window'
   assert.equal(result.items.length, 1)
 })
 
+test('a focused second query reaches the reading budget despite many similar outlets', async context => {
+  naverEnvironment(context)
+  context.mock.method(globalThis, 'fetch', async value => {
+    const counterpoint = new URL(value).searchParams.get('query').includes('주민')
+    const items = counterpoint ? [{ title: '시험장 주민 반박', originallink: 'https://resident.example/report' }]
+      : Array.from({ length: 16 }, (_, i) => ({ title: '시험장 차단 대책 감독 교육청', originallink: `https://outlet${i}.example/report` }))
+    return Response.json({ items })
+  })
+  const found = await relatedCandidates(comparisonArticle, ['시험장', '차단', '교육청', '감독'], {
+    queries: [{ ko: '시험장 차단 대책', en: '' }, { ko: '시험장 주민 반박', en: '' }],
+  })
+  assert.equal(found.items[1].sourceUrl, 'https://resident.example/report')
+})
+
 test('comparison reports provider failure and honors cancellation instead of claiming no articles exist', async context => {
   context.mock.method(globalThis, 'fetch', async () => new Response('unavailable', { status: 503 }))
   await assert.rejects(relatedCandidates(comparisonArticle, ['수능'], { queries: comparisonQueries }), { code: 'COMPARISON_SEARCH_UNAVAILABLE' })

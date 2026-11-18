@@ -196,19 +196,37 @@ export async function relatedCandidates(article, keywords = [], { queries = [], 
       if (Number.isFinite(reference) && Number.isFinite(date) && Math.abs(reference - date) > 14 * 86400_000) continue
       const text = (item.title + ' ' + item.excerpt).toLocaleLowerCase('ko')
       const score = terms.filter(term => text.includes(term)).length
-      if (score) unique.set(item.id, { item, score, host })
+      if (score) unique.set(item.id, { item, score, host, text })
     }
   }
   const sorted = [...unique.values()].sort((a, b) => b.score - a.score)
+  // Give each issue query an early slot in the body-reading budget. A large
+  // cluster covering the first angle should not crowd out a sourced rebuttal.
+  const angleLists = searchQueries.map(query => {
+    const words = [...new Set(query.ko.toLowerCase().split(/\s+/).filter(word => word.length >= 2))]
+    return sorted.map(entry => ({ entry, hits: words.filter(word => entry.text.includes(word)).length }))
+      .filter(match => match.hits > 0)
+      .sort((a, b) => b.hits - a.hits || b.entry.score - a.entry.score)
+      .map(match => match.entry)
+  })
   const counts = new Map()
+  const selected = new Set()
   const diverse = []
+  function select(entry) {
+    diverse.push(entry.item)
+    selected.add(entry.item.id)
+    counts.set(entry.host, (counts.get(entry.host) || 0) + 1)
+  }
+  for (const list of angleLists) {
+    const first = list.find(entry => !counts.has(entry.host))
+    if (first) select(first)
+  }
   // Round-robin publishers before taking a second candidate from any one outlet.
   for (let round = 0; round < 2; round++) {
     for (const entry of sorted) {
       const count = counts.get(entry.host) || 0
-      if (count !== round || diverse.some(item => item.id === entry.item.id)) continue
-      counts.set(entry.host, count + 1)
-      diverse.push(entry.item)
+      if (count !== round || selected.has(entry.item.id)) continue
+      select(entry)
     }
   }
   return { items: diverse.slice(0, 16), partial: responses.some(result => result.status === 'rejected') }

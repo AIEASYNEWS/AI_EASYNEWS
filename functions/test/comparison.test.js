@@ -61,3 +61,13 @@ test('user cancellation propagates rather than saving an empty comparison', asyn
     signal: controller.signal, findRelated: async () => [],
   }), { name: 'AbortError' })
 })
+
+test('an unverified comparison states the checked count and partial coverage', async () => {
+  const result = await buildComparison(original, [], {
+    findRelated: async () => ({ items: [candidate(1)], partial: true }),
+    articleReader: async () => candidate(1),
+    compare: async () => ({ reports: [], unverified: true }),
+  })
+  assert.equal(result.comparisonStatus, 'evidence-unverified')
+  assert.match(result.comparisonNotice, /1건.*검증하지 못.*일부/)
+})

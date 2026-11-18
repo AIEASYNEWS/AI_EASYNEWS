@@ -3,10 +3,17 @@ import { getConfig, TOPIC_IDS } from './config.js'
 import { AppError } from './errors.js'
 import { publisherKey } from './news.js'
 
+const positionSchema = z.object({
+  speaker: z.string().trim().min(1).max(80),
+  evidence: z.string().trim().min(8).max(300),
+})
+const normalizeQuote = text => text.normalize('NFKC').replace(/\s+/g, ' ').trim()
+
 const rewriteSchema = z.object({
   easyTitle: z.string().min(1).max(200), easyParagraphs: z.array(z.string().min(1).max(5000)).min(1).max(30),
   summary: z.array(z.string().min(1).max(600)).min(1).max(5), keywords: z.array(z.string().min(1).max(50)).min(1).max(8), topicId: z.enum(TOPIC_IDS),
   comparisonQueries: z.array(z.object({ ko: z.string().min(2).max(100), en: z.string().min(2).max(180) })).max(3).default([]),
+  sourcePositions: z.array(positionSchema.catch(null)).max(4).catch([]),
 })
 const comparisonSchema = z.object({
   originalFocus: z.string().max(800).default(''),
@@ -62,9 +69,21 @@ const systemInstruction = '당신은 한국어 뉴스 읽기를 돕는 편집자
 export async function rewriteArticle(article, signal) {
   const prompt = `아래 기사를 쉬운 한국어로 바꾸세요. 핵심 정보를 빠뜨리거나 실제 의미를 바꾸지 마세요. 어려운 단어는 문맥 안에서 쉽게 설명하세요.
 같은 사건·쟁점을 다른 관점에서 다룬 보도를 찾을 검색어도 3개 작성하세요. 각 검색어는 핵심 인물·기관·지역·사건명 중 최소 하나와 구체적 쟁점을 유지하세요. 첫 검색어는 중립적으로, 나머지는 원인·대응·효과·당사자 관점으로 범위를 넓히세요. 긍정·부정·찬성·반대라는 결론을 미리 정하지 마세요. ko는 한국어 뉴스 검색용, en은 GDELT의 영어 번역 본문 검색용 영어로 같은 쟁점을 표현하세요. URL·검색 연산자는 포함하지 마세요.
-JSON만 반환하세요: {"easyTitle":"쉬운 제목","easyParagraphs":["쉬운말 문단"],"summary":["핵심 요약 1~5개"],"keywords":["기사 핵심 고유명사 또는 검색어 1~8개"],"topicId":"${TOPIC_IDS.join('|')} 중 하나","comparisonQueries":[{"ko":"구체적인 한국어 검색어","en":"specific English search terms"}]}.
+원문에 서로 다른 당사자의 주장·반박 또는 전문가의 해석이 있으면 sourcePositions에 최대 4개를 담으세요. speaker는 발언 주체의 본문 표기, evidence는 그 주체와 입장·발언 동사가 함께 나오는 연속된 원문 구절(8~300자)입니다. 단순 출석·일정·절차는 입장이 아닙니다. 간접 인용의 주체를 바꾸지 말고, 주체가 불명확하면 제외하세요. 근거가 없으면 빈 배열을 쓰세요. 각 입장을 찾을 검색어에는 같은 사건의 식별어를 유지하면서 서로 다른 당사자·쟁점 단서를 넣으세요. 재판 보도에서는 증인·피고인·수사기관·법원을 구별하고 주장이나 증언을 판결로 표현하지 마세요.
+JSON만 반환하세요: {"easyTitle":"쉬운 제목","easyParagraphs":["쉬운말 문단"],"summary":["핵심 요약 1~5개"],"keywords":["기사 핵심 고유명사 또는 검색어 1~8개"],"topicId":"${TOPIC_IDS.join('|')} 중 하나","comparisonQueries":[{"ko":"구체적인 한국어 검색어","en":"specific English search terms"}],"sourcePositions":[{"speaker":"원문의 발언 주체","evidence":"해당 주체와 입장이 함께 나오는 원문 구절"}]}.
 <article>${JSON.stringify({ title: article.title, paragraphs: article.originalParagraphs })}</article>`
-  return parseAiJson(await complete(systemInstruction, prompt, { signal }), rewriteSchema)
+  const result = parseAiJson(await complete(systemInstruction, prompt, { signal }), rewriteSchema)
+  const paragraphs = article.originalParagraphs.map(normalizeQuote)
+  const seen = new Set()
+  result.sourcePositions = result.sourcePositions.filter(position => {
+    if (!position) return false
+    const evidence = normalizeQuote(position.evidence)
+    if (seen.has(evidence) || !evidence.includes(normalizeQuote(position.speaker)) ||
+        !paragraphs.some(paragraph => paragraph.includes(evidence))) return false
+    seen.add(evidence)
+    return true
+  })
+  return result
 }
 
 export async function compareArticles(original, related, signal) {
@@ -94,7 +113,8 @@ JSON만 반환하세요: {"originalFocus":"원문이 주로 강조하는 점","r
     return [{ ...report, publisher: source.publisher, title: source.title, sourceUrl: source.sourceUrl, publishedAt: source.publishedAt, ...(source.imageUrl ? { imageUrl: source.imageUrl } : {}) }]
   })
   // Summarize only retained reports; a rejected/unknown citation must not survive in an overview.
-  return { originalFocus: reports.length ? result.originalFocus : '', comparison: reports.map(report => report.focus).join('\n\n'), reports }
+  return { originalFocus: reports.length ? result.originalFocus : '', comparison: reports.map(report => report.focus).join('\n\n'), reports,
+    unverified: result.reports.some(report => report.kind === 'different-perspective') && !reports.length }
 }
 
 export async function answerQuestion(article, sentence, question, signal) {

@@ -69,6 +69,15 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
             {easy && article.summary.length > 0 && <section ref={summaryRef} aria-labelledby="summary-heading" className="mt-6 scroll-mt-5 rounded-2xl border border-line bg-surface p-4"><h2 id="summary-heading" className="text-base leading-6 font-bold">핵심 요약</h2><ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-[21px]">{article.summary.map((item) => <li key={item}>{item}</li>)}</ul></section>}
           </div>
         </div>
+        {easy && Boolean(article.sourcePositions?.length) && <section aria-labelledby="source-positions-heading" className="px-5 pb-6">
+          <h2 id="source-positions-heading" className="text-lg font-bold">이 기사에 나온 입장</h2>
+          <ul className="mt-3 space-y-3">{article.sourcePositions?.map(position =>
+            <li key={position.evidence} className="rounded-xl border border-line p-4">
+              <h3 className="text-sm font-bold">{position.speaker}</h3>
+              <blockquote className="mt-2 border-l-2 border-brand pl-3 text-sm leading-6">{position.evidence}</blockquote>
+            </li>)}</ul>
+          <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-muted underline">{article.publisher} 원문 보기</a>
+        </section>}
         {easy && article.comparisonNotice && <p role="status" className="px-5 pb-6 text-sm leading-[21px] text-muted">{article.comparisonNotice}</p>}
         {easy && article.reports.length > 0 && <section ref={comparisonRef} aria-labelledby="comparison-heading" className="scroll-mt-5 border-t-[6px] border-line px-5 py-6">
           <h2 id="comparison-heading" className="text-lg leading-[26px] font-bold">같은 이슈, 다른 관점</h2>

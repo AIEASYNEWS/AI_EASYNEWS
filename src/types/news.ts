@@ -35,6 +35,7 @@ export interface NewsArticle extends NewsItem {
   comparison: string
   reports: RelatedReport[]
   originalFocus?: string
-  comparisonStatus?: 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'analysis-failed' | 'timeout'
+  sourcePositions?: { speaker: string; evidence: string }[]
+  comparisonStatus?: 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'evidence-unverified' | 'analysis-failed' | 'timeout'
   comparisonNotice?: string
 }

@@ -53,10 +53,15 @@ export async function buildComparison(article, keywords, {
     stage = 'analysis'
     const result = await compare(article, related, comparisonSignal)
     comparisonSignal.throwIfAborted()
-    if (!result.reports.length) return empty('no-distinct-perspective')
+    if (!result.reports.length) {
+      const status = result.unverified ? 'evidence-unverified' : 'no-distinct-perspective'
+      const reason = result.unverified ? '관점 차이를 뒷받침할 출처와 원문 인용을 검증하지 못했어요.' : '같은 쟁점을 다르게 설명한 근거를 확인하지 못했어요.'
+      const limitation = failures || search.partial ? ' 일부 검색 또는 본문 읽기는 완료하지 못했어요.' : ''
+      return { ...empty(status), comparisonNotice: `다른 언론사 기사 ${related.length}건을 비교했지만 ${reason}${limitation}` }
+    }
     const partial = failures > 0 || Boolean(search.partial)
     return {
-      ...result, comparisonStatus: partial ? 'partial' : 'ready',
+      originalFocus: result.originalFocus || '', comparison: result.comparison, reports: result.reports, comparisonStatus: partial ? 'partial' : 'ready',
       ...(partial ? { comparisonNotice: '일부 기사에 접근하지 못해, 본문을 확인한 보도만 비교했어요.' } : {}),
     }
   } catch (error) {
