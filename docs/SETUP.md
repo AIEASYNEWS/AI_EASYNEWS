@@ -81,8 +81,8 @@ Firebase Hosting은 `/api/**`를 함수에 연결합니다. 기존 Vercel 정적
 
 ## 뉴스와 AI
 
-- 현재 로컬 환경은 한겨레·연합뉴스 RSS의 실제 기사 메타데이터를 사용합니다. `NEWS_RSS_FEEDS`로 공급원을 설정하며 Naver 키가 설정되면 Naver 검색 API를 우선 사용합니다. 둘 다 없으면 GDELT 최근 72시간 메타데이터를 사용합니다. RSS/GDELT 검색은 수집된 제목·언론사 범위에서 수행합니다.
-- Naver 뉴스 검색 키 2개를 설정하면 Naver 검색 API를 사용합니다. 이용 권한을 확인한 RSS만 `NEWS_RSS_FEEDS`로 설정할 수 있습니다.
+- 홈에 네이버 뉴스 검색 결과를 표시하려면 [NAVER API HUB](https://www.ncloud.com/product/applicationService/naverApiHub)에 뉴스 검색 API를 등록하고, 발급된 Client ID와 Client Secret을 서버의 `.env.local`에 `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`으로 설정합니다. 홈은 관심 주제별 최신 결과를 합해 최대 10건을 표시합니다. 선택한 주제가 없으면 한 주제를 무작위로 골라 최근 결과를 가져옵니다. 카드에서 앱 내 기사 미리보기가 열립니다.
+- RSS 공급원은 `NEWS_RSS_FEEDS`에 설정합니다. 로컬 설정에는 한겨레·연합뉴스 RSS를 사용합니다. 기존 개발자센터용 `NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET`이 있으면 기존 뉴스 공급원에서 우선 사용합니다. RSS와 기존 개발자센터용 키가 모두 비어 있으면 GDELT 최근 72시간 기사 메타데이터를 사용합니다. RSS/GDELT 검색은 수집된 제목·언론사 범위에서 수행합니다.
 - 로컬 개발 환경에 HTTPS 프록시가 설정되어 있으면 검증한 주요 언론사의 정확한 HTTPS 주소에만 프록시를 사용합니다. 모든 리다이렉트에서 공개 주소를 다시 확인하며, 다른 주소는 DNS를 고정한 연결을 유지합니다.
 - 공개 URL의 HTML을 Readability로 추출합니다. 로그인/유료/스크립트 전용 기사는 읽지 못할 수 있으며 실패로 안내합니다. 원문 출처 링크를 유지합니다. 내부 IP, 잘못된 URL, 내부 주소로의 리다이렉트, 과도한 응답 크기를 차단합니다.
 - 쉬운말 본문/요약은 실제 AI 응답을 검증한 뒤 저장합니다. 비교는 실제로 본문을 읽은 관련 기사만 대상으로 하며, 없거나 실패하면 이를 표시합니다. 예시 기사나 미리 정한 답변으로 대체하지 않습니다.
@@ -97,6 +97,8 @@ Firebase 웹 앱의 발신자 ID와 Cloud Messaging의 웹 푸시 인증서 공�
 뉴스 발송은 `notifyInterestNews` 예약 함수가 15분마다 수행합니다. Vercel에서 웹/API를 운영하는 경우에도 이 Firebase 함수를 별도로 배포하고 뉴스 공급원을 설정해야 합니다. 기기에 등록된 시점 이후의 관심 기사 중 가장 최근 기사 한 건을 보내며, 전체 목록은 앱에서 확인할 수 있습니다.
 
 ## 구독 상품
+
+`.env.local`에서 `ENABLE_DEMO_SUBSCRIPTIONS=true`로 설정하고 서버를 다시 시작하면 로그인한 회원은 구독 버튼으로 테스트용 무제한 변환을 활성화할 수 있습니다. 결제 연동 시 테스트 설정을 끄면 RevenueCat으로 구독 권한을 확인합니다.
 
 상품 미등록 상태에서는 구독 안내에 요금 미정을 표시합니다. 웹 결제는 RevenueCat의 **identified user**용 Web Purchase Link를 사용하도록 구현했습니다. 상품 등록 후 서버에 `REVENUECAT_API_KEY`(v1 고객 조회용), `REVENUECAT_ENTITLEMENT_ID`, `REVENUECAT_PURCHASE_URL`, `SUBSCRIPTION_MONTHLY_KRW`를 설정합니다. 가격 표시는 등록한 원화 월간 상품과 같게 설정하세요. 결제 완료 후 돌아올 주소는 웹 앱의 `/#/home`입니다.
 

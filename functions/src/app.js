@@ -1,12 +1,13 @@
+import { randomInt } from 'node:crypto'
 import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
 import { getConfig, TOPIC_IDS } from './config.js'
 import { adminServices, requireUser } from './firebase.js'
-import { getSubscription } from './subscription.js'
+import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle } from './articles.js'
-import { getNews, relatedCandidates } from './news.js'
+import { getNaverHubNews, getNews, relatedCandidates } from './news.js'
 import { buildComparison } from './comparison.js'
 import { assertAiConfigured, rewriteArticle, compareArticles, answerQuestion } from './ai.js'
 import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead } from './store.js'
@@ -15,9 +16,11 @@ const urlSchema = z.object({ sourceUrl: z.string().url().max(2048) }).strict()
 const profileSchema = z.object({ topicIds: z.array(z.enum(TOPIC_IDS)).max(7).refine(ids => new Set(ids).size === ids.length), completed: z.boolean() }).strict()
 const questionSchema = z.object({ articleId: z.string().regex(/^[a-f0-9]{32}$/), sourceUrl: z.string().url().max(2048), sentence: z.string().trim().min(1).max(5000), question: z.string().trim().min(1).max(1000) }).strict()
 const rate = new Map()
+const homeNewsLimit = 10
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
+  const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
   app.use((request, response, next) => {
     const origin = request.headers.origin
@@ -63,7 +66,13 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.use(async (request, _response, next) => { request.user = await requireUser(request); next() })
   const memberOnly = (request, _response, next) => next(request.user.anonymous
     ? new AppError('MEMBER_REQUIRED', '로그인 후 이용해 주세요.', 403) : undefined)
-  router.get('/subscription', memberOnly, async (request, response) => response.json(await getSubscription(request.user)))
+  router.get('/subscription', memberOnly, async (request, response) => response.json(await subscriptionFor(request.user)))
+  if (demoSubscriptions) {
+    router.post('/subscription/demo', memberOnly, async (request, response) => {
+      await activateDemoSubscription(request.user.uid)
+      response.json(await subscriptionFor(request.user))
+    })
+  }
   router.put('/notification-device', memberOnly, async (request, response) => {
     const { token, remove } = z.object({ token: z.string().min(16).max(4096), remove: z.boolean() }).strict().parse(request.body)
     response.json(await registerDevice(request.user.uid, token, remove))
@@ -80,15 +89,28 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.get('/profile', async (request, response) => response.json(await getProfile(request.user.uid)))
   router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
   router.get('/quota', async (request, response) => {
-    const plan = await getSubscription(request.user)
+    const plan = await subscriptionFor(request.user)
     response.json(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid))
   })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
-  router.get('/recommendations', async (request, response) => {
+  router.get('/recommendations', memberOnly, async (request, response) => {
     const profile = await getProfile(request.user.uid)
-    if (!profile.topicIds?.length) return response.json({ items: [], total: 0, hasMore: false })
-    const news = await getNews({ topics: profile.topicIds, limit: 12 })
-    response.json({ ...news, hasMore: false })
+    const topics = (profile.topicIds ?? []).filter(topic => TOPIC_IDS.includes(topic))
+    const { naverHub } = getConfig()
+    if (naverHub) {
+      const searchTopics = topics.length ? topics : [TOPIC_IDS[randomInt(TOPIC_IDS.length)]]
+      const share = Math.floor(homeNewsLimit / searchTopics.length)
+      const remainder = homeNewsLimit % searchTopics.length
+      const results = await Promise.all(searchTopics.map((topic, index) => getNaverHubNews(topic, naverHub, share + Number(index < remainder))))
+      const items = results.flatMap(result => result.items)
+      return response.json({ items, total: items.length, hasMore: false, source: 'naver-hub' })
+    }
+    const news = await getNews({ topics, limit: topics.length ? homeNewsLimit : 30 })
+    if (topics.length) return response.json({ ...news, hasMore: false })
+    const remaining = news.items.map((_, index) => index)
+    const selected = new Set()
+    while (remaining.length && selected.size < homeNewsLimit) selected.add(remaining.splice(randomInt(remaining.length), 1)[0])
+    response.json({ ...news, items: news.items.filter((_, index) => selected.has(index)), hasMore: false })
   })
   router.get('/notifications', memberOnly, async (request, response) => {
     const profile = await getProfile(request.user.uid)
@@ -107,9 +129,11 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/questions', async (request, response) => {
     assertAiConfigured()
     const { articleId, sourceUrl, sentence, question } = questionSchema.parse(request.body)
-    const article = await getArticle(request.user.uid, articleId).catch(error => {
+    const article = await getArticle(request.user.uid, articleId).catch(async error => {
       if (error.code !== 'ARTICLE_NOT_FOUND') throw error
-      return readArticle(sourceUrl)
+      const original = await articleReader(sourceUrl)
+      if (original.id !== articleId) throw new AppError('ARTICLE_NOT_FOUND', '선택한 문장이 있는 기사를 찾지 못했어요.', 404)
+      return original
     })
     await reserveQuestion(request.user.uid)
     response.json({ answer: await answerQuestion(article, sentence, question) })
@@ -117,7 +141,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
     const { sourceUrl } = urlSchema.parse(request.body)
-    const plan = await getSubscription(request.user)
+    const plan = await subscriptionFor(request.user)
     const settle = await reserveConversion(request.user.uid, plan.active)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }

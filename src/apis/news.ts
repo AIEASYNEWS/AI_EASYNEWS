@@ -4,6 +4,8 @@ import { apiRequest, ApiError } from './client'
 import { getIdToken } from './firebase'
 
 export interface NewsResponse { items: NewsItem[]; total: number; hasMore: boolean; source: 'naver' | 'rss' | 'gdelt' }
+export interface RecommendedNewsResponse extends Omit<NewsResponse, 'source'> { source?: NewsResponse['source'] | 'naver-hub' }
+
 export function getNews(options: { query?: string; topic?: TopicId | ''; sort?: string; page?: number } = {}, signal?: AbortSignal) {
   const params = new URLSearchParams(Object.entries(options).map(([key, value]) => [key, String(value)]))
   return apiRequest<NewsResponse>(`/news?${params}`, { signal, authenticated: false })

@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { apiRequest } from '../apis/client'
-import type { NewsResponse } from '../apis/news'
+import type { RecommendedNewsResponse } from '../apis/news'
 
 export function useRecommendedNews(enabled: boolean, preferencesKey: string) {
   const [version, setVersion] = useState(0)
   const key = `${preferencesKey}:${version}`
-  const [state, setState] = useState<{ key: string; data?: NewsResponse; error?: string }>({ key: '' })
+  const [state, setState] = useState<{ key: string; data?: RecommendedNewsResponse; error?: string }>({ key: '' })
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
-    apiRequest<NewsResponse>('/recommendations', { signal: controller.signal }).then(data => {
+    apiRequest<RecommendedNewsResponse>('/recommendations', { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) setState({ key, data })
     }).catch(error => { if (!controller.signal.aborted) setState({ key, error: error.message }) })
     return () => controller.abort()

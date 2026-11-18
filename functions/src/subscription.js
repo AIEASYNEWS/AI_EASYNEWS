@@ -1,8 +1,15 @@
 import { AppError } from './errors.js'
 import { getConfig } from './config.js'
+import { adminServices } from './firebase.js'
+
+const demoSubscription = uid => adminServices().db.collection('users').doc(uid).collection('entitlements').doc('demoSubscription')
+
+export async function activateDemoSubscription(uid) {
+  await demoSubscription(uid).set({ active: true })
+}
 
 /** App User IDs in the hosted checkout and the receipt API are the verified Firebase UID. */
-export async function getSubscription(user) {
+export async function getSubscription(user, demo = false) {
   const key = process.env.REVENUECAT_API_KEY
   const entitlementId = process.env.REVENUECAT_ENTITLEMENT_ID
   const base = process.env.REVENUECAT_PURCHASE_URL
@@ -12,7 +19,9 @@ export async function getSubscription(user) {
     monthlyKrw: Number.isSafeInteger(price) && price > 0 ? price : null,
     dailyLimit: getConfig().freeDailyLimit,
   }
-  if (user.anonymous || !key || !entitlementId) return plan
+  if (user.anonymous) return plan
+  if (demo) return { ...plan, active: (await demoSubscription(user.uid).get()).data()?.active === true, monthlyKrw: 0, demo: true }
+  if (!key || !entitlementId) return plan
   const id = encodeURIComponent(user.uid)
   const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${id}`, {
     headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000),
