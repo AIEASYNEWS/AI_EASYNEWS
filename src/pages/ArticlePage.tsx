@@ -44,7 +44,7 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
           </div>
           <div role="tabpanel" id="article-content" aria-labelledby={`article-tab-${tab}`} tabIndex={0} className="outline-offset-4">
             {easy && !article.easyParagraphs.length && <div className="mt-6"><p className="text-sm text-muted">쉬운말로 변환하면 본문과 핵심 요약을 볼 수 있어요.</p><Button className="mt-4" onClick={onConvert}>쉬운말로 변환하기</Button></div>}
-            <div className="mt-6 flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-1 text-xs leading-[18px] ${easy ? 'bg-brand-soft text-brand' : 'border border-line'}`}>{easy ? 'AI가 쉽게 바꾼 글' : '원문'}</span><span className="text-xs leading-[18px] text-muted">{easy ? '어려운 표현을 쉬운 말로 바꿨어요' : '언론사가 쓴 기사 그대로예요'}</span></div>
+            <div className="mt-6 flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-1 text-xs leading-[18px] ${easy ? 'bg-brand-soft text-brand' : 'border border-line'}`}>{easy ? '쉬운 한국어' : '원문'}</span><span className="text-xs leading-[18px] text-muted">{easy ? 'AI가 기사 내용을 쉽게 풀어 썼어요' : '언론사가 쓴 기사 그대로예요'}</span></div>
             {easy && <div className="mt-6 flex gap-2"><button type="button" onClick={() => summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">핵심 요약<Icon name="chevron-down" /></button>{article.reports.length > 0 && <button type="button" onClick={() => comparisonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">언론사 비교 {article.reports.length}<Icon name="chevron-down" /></button>}</div>}
             <div className="mt-6 flex flex-col gap-6">
               {paragraphs.map((paragraph, index) => (
@@ -69,6 +69,14 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
             {easy && article.summary.length > 0 && <section ref={summaryRef} aria-labelledby="summary-heading" className="mt-6 scroll-mt-5 rounded-2xl border border-line bg-surface p-4"><h2 id="summary-heading" className="text-base leading-6 font-bold">핵심 요약</h2><ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-[21px]">{article.summary.map((item) => <li key={item}>{item}</li>)}</ul></section>}
           </div>
         </div>
+        {easy && article.comparisonNotice && <p role="status" className="px-5 pb-6 text-sm leading-[21px] text-muted">{article.comparisonNotice}</p>}
+        {easy && article.reports.length > 0 && <section ref={comparisonRef} aria-labelledby="comparison-heading" className="scroll-mt-5 border-t-[6px] border-line px-5 py-6">
+          <h2 id="comparison-heading" className="text-lg leading-[26px] font-bold">같은 이슈, 다른 관점</h2>
+          <p className="mt-2 text-sm leading-[21px] text-muted">같은 사건·쟁점을 다르게 다룬 보도 {article.reports.length}개예요. 옆으로 넘기거나 화살표를 눌러 비교해 보세요.</p>
+          {article.originalFocus && <div className="mt-4 rounded-xl border border-line p-4"><p className="text-xs leading-[18px] text-muted">지금 읽은 기사의 관점</p><p className="mt-2 text-sm leading-[21px]">{article.originalFocus}</p></div>}
+          <div className="mt-4 rounded-xl bg-surface p-4"><p className="text-xs leading-[18px] text-muted">관점이 다른 부분</p><p className="mt-2 text-sm leading-[21px]">{article.comparison}</p></div>
+          <RelatedReportsCarousel key={article.id} reports={article.reports} onRelated={onRelated} />
+        </section>}
         {easy && Boolean(article.sourcePositions?.length) && <section aria-labelledby="source-positions-heading" className="px-5 pb-6">
           <h2 id="source-positions-heading" className="text-lg font-bold">이 기사에 나온 입장</h2>
           <ul className="mt-3 space-y-3">{article.sourcePositions?.map(position =>
@@ -77,14 +85,6 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
               <blockquote className="mt-2 border-l-2 border-brand pl-3 text-sm leading-6">{position.evidence}</blockquote>
             </li>)}</ul>
           <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-muted underline">{article.publisher} 원문 보기</a>
-        </section>}
-        {easy && article.comparisonNotice && <p role="status" className="px-5 pb-6 text-sm leading-[21px] text-muted">{article.comparisonNotice}</p>}
-        {easy && article.reports.length > 0 && <section ref={comparisonRef} aria-labelledby="comparison-heading" className="scroll-mt-5 border-t-[6px] border-line px-5 py-6">
-          <h2 id="comparison-heading" className="text-lg leading-[26px] font-bold">같은 이슈, 다른 관점</h2>
-          <p className="mt-2 text-sm leading-[21px] text-muted">같은 사건·쟁점을 다르게 다룬 보도 {article.reports.length}개예요. 옆으로 넘기거나 화살표를 눌러 비교해 보세요.</p>
-          {article.originalFocus && <div className="mt-4 rounded-xl border border-line p-4"><p className="text-xs leading-[18px] text-muted">지금 읽은 기사의 관점</p><p className="mt-2 text-sm leading-[21px]">{article.originalFocus}</p></div>}
-          <div className="mt-4 rounded-xl bg-surface p-4"><p className="text-xs leading-[18px] text-muted">관점이 다른 부분</p><p className="mt-2 text-sm leading-[21px]">{article.comparison}</p></div>
-          <RelatedReportsCarousel key={article.id} reports={article.reports} onRelated={onRelated} />
         </section>}
       </PageLayout>
       {questionSentence && <ArticleQuestionSheet key={questionSentence} sentence={questionSentence} articleId={article.id} sourceUrl={article.sourceUrl} onClose={() => { setQuestionSentence(''); setSelection(null) }} />}
