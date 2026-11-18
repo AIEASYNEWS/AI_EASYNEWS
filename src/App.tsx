@@ -90,6 +90,15 @@ export default function App() {
     replaceHash('/home')
   }, [])
   function previewArticle(article: NewsItem) { navigate('preview', { sourceUrl: article.sourceUrl }) }
+  function openComparison(articleId: string) {
+    navigate('article', { articleId, comparison: true })
+  }
+  function backFromArticle() {
+    if (route.comparison && route.articleId && !window.history.state?.fromArticle) {
+      replaceHash(`/articles/read?id=${encodeURIComponent(route.articleId)}`)
+    } else if (window.history.length > 1) window.history.back()
+    else navigate('home')
+  }
   const myPage = () => navigate('my')
   const notifications = () => navigate('notifications', { from: route.page })
   const openPlan = () => { setLimitOpen(false); navigate('subscription', { from: route.page }) }
@@ -101,7 +110,7 @@ export default function App() {
   else if (route.page === 'topics') content = <InterestTopicsPage onComplete={() => navigate('home')} />
   else if (route.page === 'interests') content = <InterestSettingsPage onBack={() => navigate(route.from ?? 'my')} />
   else if (route.page === 'converting' && (route.sourceUrl || sourceUrl)) content = <ConversionPage sourceUrl={route.sourceUrl || sourceUrl} onSuccess={conversionComplete} onFailure={conversionFailed} onCancel={() => { navigate('home'); setQuotaVersion(value => value + 1) }} />
-  else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} onBack={() => { if (window.history.length > 1) window.history.back(); else navigate('home') }} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
+  else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} comparison={route.comparison} onBack={backFromArticle} onCompare={openComparison} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
   else if (route.page === 'notifications') content = <NotificationsPage key={user?.uid} guest={!member} onBack={() => navigate(route.from ?? 'home')} onLogin={() => navigate('login', { from: 'notifications' })} onArticle={previewArticle} />
   else if (route.page === 'notificationSettings' && member) content = <NotificationSettingsPage key={user?.uid} onBack={myPage} onTopics={() => navigate('interests', { from: 'notificationSettings' })} />
   else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={() => navigate(route.from ?? 'my')} />
