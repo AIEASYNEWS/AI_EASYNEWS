@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
 import { getConfig, TOPIC_IDS } from './config.js'
 import { adminServices, requireUser } from './firebase.js'
-import { getSubscription } from './subscription.js'
+import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle } from './articles.js'
 import { getNaverHubNews, getNews, relatedCandidates } from './news.js'
@@ -18,8 +18,9 @@ const questionSchema = z.object({ articleId: z.string().regex(/^[a-f0-9]{32}$/),
 const rate = new Map()
 const homeNewsLimit = 10
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
+  const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
   app.use((request, response, next) => {
     const origin = request.headers.origin
@@ -65,7 +66,13 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.use(async (request, _response, next) => { request.user = await requireUser(request); next() })
   const memberOnly = (request, _response, next) => next(request.user.anonymous
     ? new AppError('MEMBER_REQUIRED', '로그인 후 이용해 주세요.', 403) : undefined)
-  router.get('/subscription', memberOnly, async (request, response) => response.json(await getSubscription(request.user)))
+  router.get('/subscription', memberOnly, async (request, response) => response.json(await subscriptionFor(request.user)))
+  if (demoSubscriptions) {
+    router.post('/subscription/demo', memberOnly, async (request, response) => {
+      await activateDemoSubscription(request.user.uid)
+      response.json(await subscriptionFor(request.user))
+    })
+  }
   router.put('/notification-device', memberOnly, async (request, response) => {
     const { token, remove } = z.object({ token: z.string().min(16).max(4096), remove: z.boolean() }).strict().parse(request.body)
     response.json(await registerDevice(request.user.uid, token, remove))
@@ -82,7 +89,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.get('/profile', async (request, response) => response.json(await getProfile(request.user.uid)))
   router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
   router.get('/quota', async (request, response) => {
-    const plan = await getSubscription(request.user)
+    const plan = await subscriptionFor(request.user)
     response.json(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid))
   })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
@@ -134,7 +141,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
     const { sourceUrl } = urlSchema.parse(request.body)
-    const plan = await getSubscription(request.user)
+    const plan = await subscriptionFor(request.user)
     const settle = await reserveConversion(request.user.uid, plan.active)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }

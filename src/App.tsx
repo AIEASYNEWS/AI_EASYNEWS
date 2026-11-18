@@ -74,7 +74,11 @@ export default function App() {
   const initial = cached && cached.uid === user?.uid && cached.article.id === route.articleId ? cached.article : undefined
 
   function startConversion(url: string) {
-    if (remaining === 0) { setLimitOpen(true); return }
+    if (remaining === 0) {
+      if (member) navigate('subscription', { from: route.page })
+      else setLimitOpen(true)
+      return
+    }
     setSourceUrl(url); setFailed(false)
     navigate('converting', { sourceUrl: url })
   }
@@ -84,7 +88,15 @@ export default function App() {
     replaceHash(`/articles/read?id=${article.id}`)
   }, [])
   const conversionFailed = useCallback((error: Error) => {
-    if ('code' in error && error.code === 'QUOTA_EXCEEDED') setLimitOpen(true)
+    if ('code' in error && error.code === 'QUOTA_EXCEEDED') {
+      const currentUser = auth?.currentUser
+      if (currentUser && !currentUser.isAnonymous) {
+        setQuotaVersion(value => value + 1)
+        replaceHash('/subscription?from=home')
+        return
+      }
+      setLimitOpen(true)
+    }
     else { setFailed(true); setNotice(error.message) }
     setQuotaVersion(value => value + 1)
     replaceHash('/home')
@@ -102,6 +114,13 @@ export default function App() {
   const myPage = () => navigate('my')
   const notifications = () => navigate('notifications', { from: route.page })
   const openPlan = () => { setLimitOpen(false); navigate('subscription', { from: route.page }) }
+  function demoSubscribed() {
+    if (!user) return
+    setQuota({ uid: user.uid, remaining: null, unlimited: true })
+    setQuotaVersion(value => value + 1)
+    setSubscribedToast(true)
+    replaceHash('/home')
+  }
   if (splash || (loading && ['my', 'notifications', 'notificationSettings', 'subscription'].includes(route.page))) return <SplashPage />
 
   let content
@@ -113,7 +132,7 @@ export default function App() {
   else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} comparison={route.comparison} onBack={backFromArticle} onCompare={openComparison} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
   else if (route.page === 'notifications') content = <NotificationsPage key={user?.uid} guest={!member} onBack={() => navigate(route.from ?? 'home')} onLogin={() => navigate('login', { from: 'notifications' })} onArticle={previewArticle} />
   else if (route.page === 'notificationSettings' && member) content = <NotificationSettingsPage key={user?.uid} onBack={myPage} onTopics={() => navigate('interests', { from: 'notificationSettings' })} />
-  else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={() => navigate(route.from ?? 'my')} />
+  else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={() => navigate(route.from ?? 'my')} onActivated={demoSubscribed} />
   else if (route.page === 'explore') content = <ExplorePage onHome={() => navigate('home')} onMyPage={myPage} onNotifications={notifications} onArticle={previewArticle} />
   else if (['my', 'subscription', 'notificationSettings'].includes(route.page)) content = <MyPage viewer={viewer} quotaText={quotaText} onAlerts={() => navigate('notificationSettings')} onPlan={openPlan} key={user?.uid} onHome={() => navigate('home')} onExplore={() => navigate('explore')} onSettings={() => navigate('interests')} onLogin={() => navigate('login')} onArticle={article => navigate('article', { articleId: article.id })} />
   else content = <HomePage key={`${user?.uid}:${quotaVersion}`} viewer={viewer} sourceUrl={sourceUrl} onUrlChange={url => { setSourceUrl(url); setFailed(false) }} quotaText={quotaText} failed={failed} onConvert={startConversion} onLogin={() => navigate('welcome')} onSettings={() => navigate('interests')} onExplore={() => navigate('explore')} onMyPage={myPage} onNotifications={notifications} onArticle={previewArticle} />

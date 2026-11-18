@@ -98,6 +98,8 @@ Firebase 웹 앱의 발신자 ID와 Cloud Messaging의 웹 푸시 인증서 공�
 
 ## 구독 상품
 
+`.env.local`에서 `ENABLE_DEMO_SUBSCRIPTIONS=true`로 설정하고 서버를 다시 시작하면 로그인한 회원은 구독 버튼으로 테스트용 무제한 변환을 활성화할 수 있습니다. 결제 연동 시 테스트 설정을 끄면 RevenueCat으로 구독 권한을 확인합니다.
+
 상품 미등록 상태에서는 구독 안내에 요금 미정을 표시합니다. 웹 결제는 RevenueCat의 **identified user**용 Web Purchase Link를 사용하도록 구현했습니다. 상품 등록 후 서버에 `REVENUECAT_API_KEY`(v1 고객 조회용), `REVENUECAT_ENTITLEMENT_ID`, `REVENUECAT_PURCHASE_URL`, `SUBSCRIPTION_MONTHLY_KRW`를 설정합니다. 가격 표시는 등록한 원화 월간 상품과 같게 설정하세요. 결제 완료 후 돌아올 주소는 웹 앱의 `/#/home`입니다.
 
 서버는 Firebase UID로 RevenueCat 권한을 조회해 활성 기간과 유예 기간을 확인합니다. 활성 구독자에게만 변환 한도를 해제하고, 구독 관리는 결제 서비스가 돌려준 관리 URL로 연결합니다. 구독 상품과 결제사가 준비되면 테스트 상품으로 결제·갱신·만료를 확인하세요.
