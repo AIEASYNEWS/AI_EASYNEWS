@@ -1,0 +1,27 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="aleum_app_icon">
+<rect width="240" height="240" rx="54" fill="url(#paint0_linear_0_4)"/>
+<g id="Union">
+<use xlink:href="#stroke0_0_4" fill="url(#paint1_radial_0_4)"/>
+<mask id="stroke1_0_4" fill="white">
+<use xlink:href="#stroke0_0_4"/>
+</mask>
+<path d="M160.023 66C161.895 66 163.61 67.0454 164.468 68.709C165.325 70.3727 165.182 72.3759 164.096 73.9004L145.791 99.5996H176.276C178.096 99.5996 179.772 100.589 180.652 102.182C181.533 103.774 181.478 105.72 180.51 107.261L134.744 180.08C133.617 181.873 131.483 182.761 129.417 182.298C127.351 181.835 125.799 180.12 125.546 178.018L122.001 148.619H89.5947C87.9068 148.619 86.3326 147.767 85.4092 146.354C84.4859 144.942 84.3372 143.158 85.0146 141.612L97.9883 112.013L62.9268 111.499C61.0127 111.471 59.282 110.353 58.4707 108.619C57.6595 106.885 57.9102 104.84 59.1152 103.353L87.876 67.8525C88.8253 66.6808 90.2537 66.0001 91.7617 66H160.023Z" stroke-width="4" stroke-linejoin="round" stroke="url(#paint2_linear_0_4)" stroke-opacity="0.3" mask="url(#stroke1_0_4)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_4" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse">
+<stop stop-color="#1E6BEB"/>
+<stop offset="0.932391" stop-color="#1251CA"/>
+</linearGradient>
+<radialGradient id="paint1_radial_0_4" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(89 72.5) rotate(74.425) scale(114.109 113.609)">
+<stop offset="0.398776" stop-color="white"/>
+<stop offset="0.752216" stop-color="#B6CFFF"/>
+</radialGradient>
+<linearGradient id="paint2_linear_0_4" x1="119.638" y1="66" x2="119.638" y2="182.419" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0.2"/>
+</linearGradient>
+<path id="stroke0_0_4" d="M160.023 66C161.895 66 163.61 67.0454 164.468 68.709C165.325 70.3727 165.182 72.3759 164.096 73.9004L145.791 99.5996H176.276C178.096 99.5996 179.772 100.589 180.652 102.182C181.533 103.774 181.478 105.72 180.51 107.261L134.744 180.08C133.617 181.873 131.483 182.761 129.417 182.298C127.351 181.835 125.799 180.12 125.546 178.018L122.001 148.619H89.5947C87.9068 148.619 86.3326 147.767 85.4092 146.354C84.4859 144.942 84.3372 143.158 85.0146 141.612L97.9883 112.013L62.9268 111.499C61.0127 111.471 59.282 110.353 58.4707 108.619C57.6595 106.885 57.9102 104.84 59.1152 103.353L87.876 67.8525C88.8253 66.6808 90.2537 66.0001 91.7617 66H160.023Z"/>
+</defs>
+</svg>
