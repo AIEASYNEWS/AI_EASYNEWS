@@ -34,14 +34,14 @@ export function MyPage({ viewer, quotaText, onHome, onExplore, onSettings, onLog
       <div className="flex items-center gap-3"><img src={guest ? '/images/ui/guest-avatar.svg' : '/images/ui/account-avatar.svg'} alt="" width="40" height="40" />
         <h2 className="text-lg font-bold">{guest ? '로그인이 필요해요' : (user?.displayName || user?.email?.split('@')[0] || '회원') + ' 님'}</h2>
         <span className={`rounded px-2 py-1 text-xs font-bold ${guest ? 'bg-slate-200 text-muted' : 'bg-brand-soft text-brand'}`}>{guest ? '비회원' : paid ? '구독 회원' : '회원'}</span></div>
-      <p className="mt-4 text-[13px] text-muted">{paid ? '변환 횟수' : '오늘 남은 변환'} <strong className="ml-1 text-ink">{quotaText}</strong></p>
+      <p className="mt-4 text-[13px] text-muted">변환 횟수 <strong className="ml-1 text-ink">{quotaText}</strong></p>
     </section>
     {guest ? <section className="mt-6 rounded-2xl border border-dashed border-line px-4 py-6 text-center"><img src="/images/ui/guest-lock.svg" alt="" className="mx-auto mb-4" /><h2 className="font-bold">로그인하고 더 편하게 보기</h2><p className="mt-2 text-sm text-muted">관심 주제 설정, 맞춤 추천, 새 기사 알림을 쓸 수 있어요.</p>
       <Button className="mt-4 min-h-12!" onClick={onLogin}>로그인하기</Button></section> : <>
       <section className="mt-6"><h2 className="text-lg font-bold">내 관심 주제</h2>{settings.value ? <TopicBadges ids={settings.value.topicIds} /> : <RequestState loading={!settings.error} error={settings.error} onRetry={settings.retry} />}</section>
       <div className="mt-6"><SettingsRow title="관심 주제 설정" onClick={onSettings} />
         <SettingsRow title="알림 설정" detail={settings.value ? `관심 주제 알림 ${settings.value.enabled ? '켜짐' : '꺼짐'}` : undefined} onClick={onAlerts} />
-        <SettingsRow title={paid ? '구독 관리' : '구독하기'} detail={paid ? '결제한 곳에서 구독을 확인하고 바꿀 수 있어요.' : '쉬운말 변환을 횟수 제한 없이 쓸 수 있어요.'} onClick={onPlan} />
+        <SettingsRow title={paid ? '구독 관리' : '구독 안내'} detail={paid ? '결제한 곳에서 구독을 확인하고 바꿀 수 있어요.' : '현재 모든 계정에 무제한 변환을 제공해요.'} onClick={onPlan} />
         <button onClick={() => void logout()} className="min-h-14 w-full border-b border-line text-left">로그아웃</button></div>
     </>}
     {(history.value?.length || history.error) ? <details className="mt-6"><summary className="cursor-pointer font-semibold">변환한 기사 {history.value?.length}</summary>

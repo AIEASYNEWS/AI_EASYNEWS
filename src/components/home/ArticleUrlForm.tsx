@@ -54,7 +54,7 @@ export function ArticleUrlForm({ value, onChange, onSubmit, quotaText, unlimited
           <div><p className="text-sm leading-[21px] font-bold">기사를 불러오지 못했어요</p><p className="mt-2 text-sm leading-[21px] text-muted">주소가 맞는지 확인해 주세요.<br />지원하지 않는 사이트일 수도 있어요.</p></div>
         </div>
       )}
-      <p className="mt-4 flex gap-2 text-xs leading-[18px] text-muted">{unlimited ? '구독 회원' : '오늘 남은 변환'}<strong className="font-bold text-ink">{unlimited ? '무제한 변환' : quotaText}</strong></p>
+      <p className="mt-4 flex gap-2 text-xs leading-[18px] text-muted">변환 횟수<strong className="font-bold text-ink">{unlimited ? '무제한' : quotaText}</strong></p>
       <Button type="submit" className="mt-4">{failed ? '다시 시도' : '쉬운말로 변환하기'}</Button>
     </form>
   )

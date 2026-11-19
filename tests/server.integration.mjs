@@ -19,7 +19,7 @@ process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099'
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
 process.env.GCLOUD_PROJECT = 'demo-ai-easynews'
 const { createApp } = await import('../functions/src/app.js')
-const { getQuota, reserveConversion } = await import('../functions/src/store.js')
+const { getQuota, reserveConversion, usageDay } = await import('../functions/src/store.js')
 const { adminServices } = await import('../functions/src/firebase.js')
 let server, port, account, second
 let rewriteShouldFail = false
@@ -56,6 +56,10 @@ test('requires real Firebase tokens and rejects untrusted origins', async () => 
   assert.equal((await request(port, '/api/profile')).status, 401)
   assert.equal((await request(port, '/api/profile', undefined, 'invalid-token')).status, 401)
   assert.equal((await request(port, '/api/profile', undefined, account.idToken)).status, 200)
+  const quota = (await request(port, '/api/quota', undefined, account.idToken)).data
+  assert.equal(quota.unlimited, true)
+  assert.equal(quota.remaining, null)
+  assert.equal(quota.subscriber, false)
 })
 
 test('profile schemas reject role escalation and invalid topics; profiles remain account-scoped', async () => {
@@ -66,19 +70,22 @@ test('profile schemas reject role escalation and invalid topics; profiles remain
   assert.deepEqual((await request(port, '/api/profile', undefined, second.idToken)).data.topicIds, [])
 })
 
-test('parallel conversion reservations enforce daily limits and rollback cancellation', async () => {
+test('unlimited conversions accept parallel requests and rollback cancellation', async () => {
   const uid = account.localId
   const results = await Promise.allSettled(Array.from({ length: 6 }, () => reserveConversion(uid)))
   const leases = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
-  assert.equal(leases.length, 3)
-  assert.equal((await getQuota(uid)).remaining, 0)
+  assert.equal(leases.length, 6)
+  assert.equal((await getQuota(uid)).unlimited, true)
   await leases[0]()
-  assert.equal((await getQuota(uid)).remaining, 1)
+  assert.equal((await getQuota(uid)).remaining, null)
   const replacement = await reserveConversion(uid)
   await replacement({ id: 'a'.repeat(32), title: '저장된 기사', originalParagraphs: ['원문'], easyParagraphs: ['쉬운말'], sourceUrl: 'https://example.com' })
   await replacement() // Repeated completion must not double charge.
   await Promise.all(leases.slice(1).map(settle => settle()))
-  assert.equal((await getQuota(uid)).remaining, 2)
+  assert.equal((await getQuota(uid)).remaining, null)
+  const usage = (await adminServices().db.collection('users').doc(uid).collection('usage').doc(usageDay()).get()).data()
+  assert.equal(usage.count, 1)
+  assert.deepEqual(usage.pending, {})
   assert.equal((await request(port, `/api/articles/${'a'.repeat(32)}`, undefined, account.idToken)).status, 200)
   assert.equal((await request(port, `/api/articles/${'a'.repeat(32)}`, undefined, second.idToken)).status, 404)
 })
@@ -103,6 +110,9 @@ test('members can save notification settings without losing topics; guests canno
   assert.deepEqual((await request(port, '/api/notification-settings', undefined, token)).data, { enabled: false, topicIds: ['health'] })
   assert.deepEqual((await request(port, '/api/notifications', undefined, token)).data, [])
   assert.equal((await request(port, '/api/subscription', undefined, token)).data.active, false)
+  const quota = (await request(port, '/api/quota', undefined, token)).data
+  assert.equal(quota.unlimited, true)
+  assert.equal(quota.subscriber, false)
   assert.equal((await request(port, '/api/notification-settings', { enabled: true, role: 'subscriber' }, token, 'PUT')).status, 400)
 })
 
@@ -111,7 +121,7 @@ test('conversion streams actual stages, saves the result and refunds provider fa
   rewriteShouldFail = true
   const failed = await request(port, '/api/convert', { sourceUrl: fixtureArticle.sourceUrl }, token)
   assert.match(failed.data, /event: error/)
-  assert.equal((await getQuota(second.localId)).remaining, 3)
+  assert.equal((await getQuota(second.localId)).remaining, null)
   rewriteShouldFail = false
   const result = await request(port, '/api/convert', { sourceUrl: fixtureArticle.sourceUrl }, token)
   assert.match(result.data, /"step":1/)
@@ -119,6 +129,6 @@ test('conversion streams actual stages, saves the result and refunds provider fa
   assert.match(result.data, /"step":3/)
   assert.match(result.data, /event: result/)
   assert.match(result.data, /"comparisonStatus":"no-candidates"/)
-  assert.equal((await getQuota(second.localId)).remaining, 2)
+  assert.equal((await getQuota(second.localId)).remaining, null)
   assert.equal((await request(port, `/api/articles/${fixtureArticle.id}`, undefined, token)).data.easyTitle, '쉬운 제목')
 })

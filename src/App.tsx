@@ -50,7 +50,7 @@ export default function App() {
     const timeout = window.setTimeout(() => setSubscribedToast(false), 5000)
     return () => window.clearTimeout(timeout)
   }, [subscribedToast])
-  const [quota, setQuota] = useState<{ uid?: string; remaining: number | null; unlimited?: boolean; error?: boolean }>()
+  const [quota, setQuota] = useState<{ uid?: string; remaining: number | null; unlimited?: boolean; subscriber?: boolean; error?: boolean }>()
   const [quotaVersion, setQuotaVersion] = useState(0)
   useEffect(() => {
     if (loading || !window.location.hash || route.page === 'welcome' || route.page === 'signup' || route.page === 'login') return
@@ -58,7 +58,7 @@ export default function App() {
     const refresh = () => getQuota().then(value => {
       if (!active) return
       setQuota({ uid: user?.uid, ...value })
-      if (value.unlimited && user && sessionStorage.getItem('easynews:checkout') === user.uid) {
+      if (value.subscriber && user && sessionStorage.getItem('easynews:checkout') === user.uid) {
         sessionStorage.removeItem('easynews:checkout')
         setSubscribedToast(true)
         replaceHash('/home')
@@ -68,17 +68,11 @@ export default function App() {
     window.addEventListener('focus', refresh)
     return () => { active = false; window.removeEventListener('focus', refresh) }
   }, [user, member, loading, quotaVersion, route.page, splash])
-  const remaining = quota?.uid === user?.uid ? quota?.remaining ?? null : null
-  const viewer = !member ? 'guest' : quota?.uid === user?.uid && quota?.unlimited ? 'subscriber' : 'member'
-  const quotaText = viewer === 'subscriber' ? '무제한' : remaining !== null ? `${remaining}회` : quota?.error ? '확인할 수 없음' : '확인 중'
+  const viewer = !member ? 'guest' : quota?.uid === user?.uid && quota?.subscriber ? 'subscriber' : 'member'
+  const quotaText = '무제한'
   const initial = cached && cached.uid === user?.uid && cached.article.id === route.articleId ? cached.article : undefined
 
   function startConversion(url: string) {
-    if (remaining === 0) {
-      if (member) navigate('subscription', { from: route.page })
-      else setLimitOpen(true)
-      return
-    }
     setSourceUrl(url); setFailed(false)
     navigate('converting', { sourceUrl: url })
   }
@@ -116,7 +110,7 @@ export default function App() {
   const openPlan = () => { setLimitOpen(false); navigate('subscription', { from: route.page }) }
   function demoSubscribed() {
     if (!user) return
-    setQuota({ uid: user.uid, remaining: null, unlimited: true })
+    setQuota({ uid: user.uid, remaining: null, unlimited: true, subscriber: true })
     setQuotaVersion(value => value + 1)
     setSubscribedToast(true)
     replaceHash('/home')

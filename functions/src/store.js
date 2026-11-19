@@ -18,10 +18,11 @@ export async function saveProfile(uid, profile) {
 }
 
 export async function getQuota(uid) {
+  const limit = getConfig().freeDailyLimit
+  if (limit === null) return { remaining: null, limit: null, unlimited: true }
   const usage = await userRef(uid).collection('usage').doc(usageDay()).get()
   const count = usage.data()?.count || 0
   const pending = Object.values(usage.data()?.pending || {}).filter(expiry => expiry > Date.now()).length
-  const limit = getConfig().freeDailyLimit
   return { remaining: Math.max(0, limit - count - pending), limit, resetTimezone: 'Asia/Seoul' }
 }
 
@@ -34,7 +35,8 @@ export async function reserveConversion(uid, unlimited = false) {
     const snapshot = await transaction.get(ref)
     const count = snapshot.data()?.count || 0
     const pending = Object.fromEntries(Object.entries(snapshot.data()?.pending || {}).filter(([, expiry]) => expiry > Date.now()))
-    if (!unlimited && count + Object.keys(pending).length >= getConfig().freeDailyLimit) throw new AppError('QUOTA_EXCEEDED', '오늘의 변환 횟수를 모두 사용했어요. 내일 다시 이용해 주세요.', 429)
+    const limit = getConfig().freeDailyLimit
+    if (limit !== null && !unlimited && count + Object.keys(pending).length >= limit) throw new AppError('QUOTA_EXCEEDED', '오늘의 변환 횟수를 모두 사용했어요. 내일 다시 이용해 주세요.', 429)
     transaction.set(ref, { count, pending: { ...pending, [leaseId]: Date.now() + 5 * 60_000 } })
   })
   let settled = false
