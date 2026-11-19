@@ -13,7 +13,7 @@ export function getNews(options: { query?: string; topic?: TopicId | ''; sort?: 
 export const getArticlePreview = (sourceUrl: string, signal?: AbortSignal) => apiRequest<NewsArticle>('/articles/preview', { method: 'POST', body: JSON.stringify({ sourceUrl }), signal, authenticated: false })
 export const getSavedArticle = (id: string, signal?: AbortSignal) => apiRequest<NewsArticle>(`/articles/${encodeURIComponent(id)}`, { signal })
 export const getHistory = (signal?: AbortSignal) => apiRequest<NewsItem[]>('/history', { signal })
-export const getQuota = () => apiRequest<{ remaining: number | null; limit: number | null; unlimited?: boolean }>('/quota')
+export const getQuota = () => apiRequest<{ remaining: number | null; limit: number | null; unlimited?: boolean; subscriber?: boolean }>('/quota')
 export const askQuestion = (articleId: string, sentence: string, question: string, sourceUrl: string, signal?: AbortSignal) => apiRequest<{ answer: string }>('/questions', { method: 'POST', body: JSON.stringify({ articleId, sentence, question, sourceUrl }), signal })
 
 export async function convertArticle(sourceUrl: string, onProgress: (step: number) => void, signal: AbortSignal): Promise<NewsArticle> {

@@ -9,6 +9,5 @@ export interface AppRoute {
   articleId?: string
   viewer?: ViewerMode
   original?: boolean
-  comparison?: boolean
   sourceUrl?: string
 }

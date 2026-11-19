@@ -10,7 +10,8 @@ export function getConfig() {
     aiKey: process.env.MONOROUTER_API_KEY?.trim() || '',
     aiModel: process.env.MONOROUTER_MODEL?.trim() || '',
     aiBaseUrl: (process.env.MONOROUTER_BASE_URL || 'https://monogpt.kr/api/monorouter/v1').replace(/\/$/, ''),
-    freeDailyLimit: Math.max(1, Number(process.env.FREE_DAILY_LIMIT) || 3),
+    // Temporarily offer unlimited conversions to every account, including guests.
+    freeDailyLimit: null,
     allowedOrigins: [...new Set([...(process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,https://ai-easynews.vercel.app').split(',').map(value => value.trim()), ...deploymentOrigins])],
     rssFeeds: (process.env.NEWS_RSS_FEEDS || '').split(',').map(value => value.trim()).filter(Boolean),
     naverHub: naverHubClientId && naverHubClientSecret ? { clientId: naverHubClientId, clientSecret: naverHubClientSecret } : null,

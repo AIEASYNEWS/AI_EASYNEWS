@@ -2,7 +2,6 @@ import { useId, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { RelatedReport } from '../../types/news'
 import { formatDate } from '../../utils/date'
-import { Icon } from '../ui/Icon'
 
 interface RelatedReportsCarouselProps {
   reports: RelatedReport[]
@@ -103,7 +102,7 @@ export function RelatedReportsCarousel({ reports, onRelated }: RelatedReportsCar
           event.preventDefault()
           goTo(target)
         }}
-        className={'relative -mx-1 grid auto-cols-[min(292px,calc(100%_-_24px))] grid-flow-col grid-rows-[auto_auto_auto_auto_auto] gap-x-3 overflow-x-auto overscroll-x-contain scroll-px-1 px-1 pb-3 outline-offset-4 [scrollbar-width:thin] [scrollbar-color:#cccccc_transparent] ' + (dragging ? 'cursor-grabbing' : 'snap-x snap-mandatory cursor-grab')}
+        className={'relative -mx-5 flex gap-3 overflow-x-auto overscroll-x-contain scroll-px-5 px-5 [scrollbar-width:none] ' + (dragging ? 'cursor-grabbing' : 'snap-x snap-mandatory cursor-grab')}
       >
         {reports.map((report, index) => (
           <button
@@ -112,25 +111,24 @@ export function RelatedReportsCarousel({ reports, onRelated }: RelatedReportsCar
             type="button"
             aria-label={`${index + 1}번 비교 기사, ${report.relation === 'opposing' ? '반대 주장을 다룬 보도, ' : ''}${report.koreanTitle || report.title}`}
             onClick={() => onRelated(report)}
-            className="row-span-5 grid grid-rows-subgrid content-start items-start snap-start select-none rounded-xl border border-line p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
+            className="flex h-[229px] w-[280px] max-w-[calc(100%_-_16px)] shrink-0 cursor-pointer snap-start select-none flex-col items-start gap-2 rounded-xl border border-line p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
           >
-            <div className="flex flex-wrap gap-1 text-xs leading-[18px]">{report.relation && <span className="rounded bg-brand-soft px-2 py-1 font-bold text-brand">{report.relation === 'opposing' ? '반대 주장을 다룬 보도' : '다른 접근을 다룬 보도'}</span>}{(report.viewpoint || !report.relation) && <span className="rounded bg-surface px-2 py-1 text-secondary">{report.viewpoint || (report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점')}</span>}</div>
-            <p className="mt-3 text-xs leading-[18px] text-muted">{report.publisher} · {formatDate(report.publishedAt)}</p>
-            <h3 className="mt-2 text-base leading-6 font-bold break-keep [overflow-wrap:anywhere]">{report.koreanTitle || report.title}</h3>
-            <p className="mt-2 text-sm leading-[21px] break-keep text-muted [overflow-wrap:anywhere]">원문과 다른 점: {report.focus}</p>
-            <div className={report.originalEvidence && report.relatedEvidence ? 'mt-3 space-y-2 border-t border-line pt-3 text-xs leading-[18px] text-muted' : ''}>
-              {report.originalEvidence && report.relatedEvidence && <><p>원문 근거: “{report.originalEvidence}”</p><p>비교 기사 근거: “{report.relatedEvidence}”</p></>}
-            </div>
+            <span className={'rounded px-2 text-xs leading-6 font-medium text-secondary ' + (report.kind === 'same-event' ? 'bg-surface' : 'border border-[#d1d8e0]')}>
+              {report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점'}
+            </span>
+            <p className="w-full truncate text-xs leading-[18px] text-[#8b95a1]">{report.publisher} · {formatDate(report.publishedAt)}</p>
+            <h3 className="line-clamp-2 text-base leading-6 font-bold">{report.koreanTitle || report.title}</h3>
+            <p className="line-clamp-2 text-sm leading-[21px] text-muted">강조한 내용: {report.viewpoint || report.focus}</p>
+            <span className="mt-auto flex w-full items-center justify-center gap-1 border-t border-line pt-2 text-sm font-medium text-secondary">자세히 보기 <img src="/images/ui/next.svg" width="16" height="16" alt="" /></span>
           </button>
         ))}
       </div>
-      {reports.length > 1 && <div className="mt-3 flex items-center justify-between gap-2" aria-label="비교 기사 이동">
-        <button type="button" aria-label="이전 비교 기사" aria-controls={id} disabled={current === 0} onClick={() => goTo(current - 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><Icon name="back" /></button>
-        <div className="flex min-w-0 flex-col items-center">
-          <div className="flex justify-center" aria-label="비교 기사 페이지">{reports.map((report, index) => <button key={report.id} type="button" aria-label={(index + 1) + '번 기사 보기'} aria-controls={id} aria-current={current === index ? 'true' : undefined} onClick={() => goTo(index)} className="flex size-8 cursor-pointer items-center justify-center rounded-full focus-visible:outline-2"><span className={'size-1.5 rounded-full ' + (current === index ? 'bg-brand' : 'bg-[#dddddd]')} /></button>)}</div>
-          <p aria-live="polite" aria-atomic="true" className="text-xs leading-[18px] text-muted">{current + 1} / {reports.length}</p>
-        </div>
-        <button type="button" aria-label="다음 비교 기사" aria-controls={id} disabled={current === reports.length - 1} onClick={() => goTo(current + 1)} className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-30"><span className="rotate-180"><Icon name="back" /></span></button>
+      {reports.length > 1 && <div className="mt-2 flex justify-center" aria-label="비교 기사 이동">
+        {reports.map((report, index) => (
+          <button key={report.id} type="button" aria-label={`${index + 1}번 기사 보기`} aria-controls={id} aria-current={current === index || undefined} onClick={() => goTo(index)} className="grid h-6 w-3 cursor-pointer place-items-center focus-visible:outline-2">
+            <span className={'size-1.5 rounded-full ' + (current === index ? 'bg-[#333d4b]' : 'bg-[#d5dce5]')} />
+          </button>
+        ))}
       </div>}
     </div>
   )

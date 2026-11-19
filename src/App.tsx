@@ -50,7 +50,7 @@ export default function App() {
     const timeout = window.setTimeout(() => setSubscribedToast(false), 5000)
     return () => window.clearTimeout(timeout)
   }, [subscribedToast])
-  const [quota, setQuota] = useState<{ uid?: string; remaining: number | null; unlimited?: boolean; error?: boolean }>()
+  const [quota, setQuota] = useState<{ uid?: string; remaining: number | null; unlimited?: boolean; subscriber?: boolean; error?: boolean }>()
   const [quotaVersion, setQuotaVersion] = useState(0)
   useEffect(() => {
     if (loading || !window.location.hash || route.page === 'welcome' || route.page === 'signup' || route.page === 'login') return
@@ -58,7 +58,7 @@ export default function App() {
     const refresh = () => getQuota().then(value => {
       if (!active) return
       setQuota({ uid: user?.uid, ...value })
-      if (value.unlimited && user && sessionStorage.getItem('easynews:checkout') === user.uid) {
+      if (value.subscriber && user && sessionStorage.getItem('easynews:checkout') === user.uid) {
         sessionStorage.removeItem('easynews:checkout')
         setSubscribedToast(true)
         replaceHash('/home')
@@ -68,17 +68,11 @@ export default function App() {
     window.addEventListener('focus', refresh)
     return () => { active = false; window.removeEventListener('focus', refresh) }
   }, [user, member, loading, quotaVersion, route.page, splash])
-  const remaining = quota?.uid === user?.uid ? quota?.remaining ?? null : null
-  const viewer = !member ? 'guest' : quota?.uid === user?.uid && quota?.unlimited ? 'subscriber' : 'member'
-  const quotaText = viewer === 'subscriber' ? '무제한' : remaining !== null ? `${remaining}회` : quota?.error ? '확인할 수 없음' : '확인 중'
+  const viewer = !member ? 'guest' : quota?.uid === user?.uid && quota?.subscriber ? 'subscriber' : 'member'
+  const quotaText = '무제한'
   const initial = cached && cached.uid === user?.uid && cached.article.id === route.articleId ? cached.article : undefined
 
   function startConversion(url: string) {
-    if (remaining === 0) {
-      if (member) navigate('subscription', { from: route.page })
-      else setLimitOpen(true)
-      return
-    }
     setSourceUrl(url); setFailed(false)
     navigate('converting', { sourceUrl: url })
   }
@@ -102,13 +96,8 @@ export default function App() {
     replaceHash('/home')
   }, [])
   function previewArticle(article: NewsItem) { navigate('preview', { sourceUrl: article.sourceUrl }) }
-  function openComparison(articleId: string) {
-    navigate('article', { articleId, comparison: true })
-  }
   function backFromArticle() {
-    if (route.comparison && route.articleId && !window.history.state?.fromArticle) {
-      replaceHash(`/articles/read?id=${encodeURIComponent(route.articleId)}`)
-    } else if (window.history.length > 1) window.history.back()
+    if (window.history.length > 1) window.history.back()
     else navigate('home')
   }
   const myPage = () => navigate('my')
@@ -116,7 +105,7 @@ export default function App() {
   const openPlan = () => { setLimitOpen(false); navigate('subscription', { from: route.page }) }
   function demoSubscribed() {
     if (!user) return
-    setQuota({ uid: user.uid, remaining: null, unlimited: true })
+    setQuota({ uid: user.uid, remaining: null, unlimited: true, subscriber: true })
     setQuotaVersion(value => value + 1)
     setSubscribedToast(true)
     replaceHash('/home')
@@ -129,7 +118,7 @@ export default function App() {
   else if (route.page === 'topics') content = <InterestTopicsPage onComplete={() => navigate('home')} />
   else if (route.page === 'interests') content = <InterestSettingsPage onBack={() => navigate(route.from ?? 'my')} />
   else if (route.page === 'converting' && (route.sourceUrl || sourceUrl)) content = <ConversionPage sourceUrl={route.sourceUrl || sourceUrl} onSuccess={conversionComplete} onFailure={conversionFailed} onCancel={() => { navigate('home'); setQuotaVersion(value => value + 1) }} />
-  else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} comparison={route.comparison} onBack={backFromArticle} onCompare={openComparison} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
+  else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} onBack={backFromArticle} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
   else if (route.page === 'notifications') content = <NotificationsPage key={user?.uid} guest={!member} onBack={() => navigate(route.from ?? 'home')} onLogin={() => navigate('login', { from: 'notifications' })} onArticle={previewArticle} />
   else if (route.page === 'notificationSettings' && member) content = <NotificationSettingsPage key={user?.uid} onBack={myPage} onTopics={() => navigate('interests', { from: 'notificationSettings' })} />
   else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={() => navigate(route.from ?? 'my')} onActivated={demoSubscribed} />

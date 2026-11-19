@@ -28,7 +28,6 @@ export function useAppNavigation() {
     articleId: url.searchParams.get('id') ?? undefined,
     viewer: viewer === 'guest' || viewer === 'member' || viewer === 'subscriber' ? viewer : undefined,
     original: url.searchParams.get('tab') === 'original',
-    comparison: page === 'article' && url.searchParams.get('view') === 'comparison',
     sourceUrl: url.searchParams.get('url') ?? undefined,
   }
 
@@ -38,13 +37,9 @@ export function useAppNavigation() {
     if (options.relatedTitle) params.set('related', options.relatedTitle)
     if (options.articleId) params.set('id', options.articleId)
     if (options.original) params.set('tab', 'original')
-    if (options.comparison) params.set('view', 'comparison')
     if (options.sourceUrl) params.set('url', options.sourceUrl)
     const nextHash = `#${paths[nextPage]}${params.size ? `?${params}` : ''}`
-    if (options.comparison) {
-      window.history.pushState({ fromArticle: true }, '', nextHash)
-      window.dispatchEvent(new HashChangeEvent('hashchange'))
-    } else window.location.hash = nextHash
+    window.location.hash = nextHash
   }
 
   return { route, navigate }

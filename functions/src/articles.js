@@ -19,6 +19,23 @@ export function inferTopic(title) {
   return rules.find(([, expression]) => expression.test(title))?.[0] || 'society'
 }
 
+function chosunArticleData(document, sourceUrl) {
+  const source = new URL(sourceUrl)
+  if (!/(^|\.)chosun\.com$/.test(source.hostname)) return null
+  for (const script of document.querySelectorAll('script:not([src])')) {
+    const match = script.textContent.match(/Fusion\.globalContent\s*=\s*({[\s\S]*?});\s*Fusion\./)
+    if (!match) continue
+    try {
+      const data = JSON.parse(match[1])
+      const canonical = new URL(data.canonical_url, source)
+      if (data.type !== 'story' || canonical.origin !== source.origin || canonical.pathname !== source.pathname ||
+          data.content_restrictions?.content_code !== '0' || !Array.isArray(data.content_elements)) return null
+      return data
+    } catch { return null }
+  }
+  return null
+}
+
 export function parseArticleHtml(html, sourceUrl) {
   const dom = new JSDOM(html, { url: sourceUrl })
   try {
@@ -26,13 +43,28 @@ export function parseArticleHtml(html, sourceUrl) {
     const meta = selector => document.querySelector(selector)?.getAttribute('content')?.trim() || ''
     let imageUrl
     try { const image = meta('meta[property="og:image"]'); if (image) imageUrl = parsePublicUrl(new URL(image, sourceUrl).href).href } catch { /* 잘못된 이미지 주소는 생략한다. */ }
-    const published = meta('meta[property="article:published_time"]') || meta('meta[name="pubdate"]') || meta('meta[name="date"]')
+    const embeddedArticle = chosunArticleData(document, sourceUrl)
+    const published = meta('meta[property="article:published_time"]') || meta('meta[name="pubdate"]') || meta('meta[name="date"]') || embeddedArticle?.display_date
     const readableDocument = document.cloneNode(true)
     // This publisher's page includes login prompts and recommendations outside the article.
     const host = new URL(sourceUrl).hostname
     const scopedBody = /(^|\.)mk\.co\.kr$/.test(host) ? readableDocument.querySelector('.news_cnt_detail_wrap') : null
     if (scopedBody && cleanText(scopedBody.textContent).length >= 120) readableDocument.body.replaceChildren(scopedBody.cloneNode(true))
-    const article = new Readability(readableDocument, { charThreshold: 100 }).parse()
+    let article = new Readability(readableDocument, { charThreshold: 100 }).parse()
+    if ((!article?.title || cleanText(article.textContent).length < 120) && embeddedArticle) {
+      // Client-rendered public articles ship their paragraphs as JSON in the page.
+      // Parse data only, never execute publisher scripts or include related stories.
+      const fallbackDocument = document.cloneNode(true)
+      const body = fallbackDocument.createElement('article')
+      for (const element of embeddedArticle.content_elements) {
+        if (element.type !== 'text' || typeof element.content !== 'string') continue
+        const paragraph = fallbackDocument.createElement('p')
+        paragraph.textContent = cleanText(JSDOM.fragment(element.content).textContent)
+        body.append(paragraph)
+      }
+      fallbackDocument.body.replaceChildren(body)
+      article = new Readability(fallbackDocument, { charThreshold: 100 }).parse()
+    }
     if (!article?.title || cleanText(article.textContent).length < 120) throw new AppError('ARTICLE_UNREADABLE', '기사 본문을 읽지 못했어요. 로그인 없이 볼 수 있는 원문 기사 주소로 시도해 주세요.', 422)
     const parsed = new JSDOM(article.content).window
     for (const element of parsed.document.querySelectorAll('audio,video,script,style,noscript,button')) element.remove()

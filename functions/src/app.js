@@ -90,7 +90,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
   router.get('/quota', async (request, response) => {
     const plan = await subscriptionFor(request.user)
-    response.json(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid))
+    response.json({ ...(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid)), subscriber: plan.active })
   })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
   router.get('/recommendations', memberOnly, async (request, response) => {
@@ -141,8 +141,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
     const { sourceUrl } = urlSchema.parse(request.body)
-    const plan = await subscriptionFor(request.user)
-    const settle = await reserveConversion(request.user.uid, plan.active)
+    const settle = await reserveConversion(request.user.uid)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }
     response.on('close', disconnect)
