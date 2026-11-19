@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { RelatedReportsCarousel } from '../components/article/RelatedReportsCarousel'
 import { ArticleQuestionSheet } from '../components/article/ArticleQuestionSheet'
 import { PageLayout } from '../components/layout/PageLayout'
 import { Icon } from '../components/ui/Icon'
-import type { NewsArticle } from '../types/news'
+import type { NewsArticle, RelatedReport } from '../types/news'
 import { formatDate } from '../utils/date'
 import { Button } from '../components/ui/Button'
 import { readableArticleParagraphs } from '../utils/articleText'
@@ -11,11 +12,11 @@ interface ArticlePageProps {
   article: NewsArticle
   original?: boolean
   onBack: () => void
-  onCompare: () => void
+  onRelated: (report: RelatedReport) => void
   onConvert: () => void
 }
 
-export function ArticlePage({ article, original = false, onBack, onCompare, onConvert }: ArticlePageProps) {
+export function ArticlePage({ article, original = false, onBack, onRelated, onConvert }: ArticlePageProps) {
   const [tab, setTab] = useState(original ? 'original' : 'easy')
   const [selection, setSelection] = useState<{ text: string; index: number } | null>(null)
   const [questionSentence, setQuestionSentence] = useState('')
@@ -55,7 +56,7 @@ export function ArticlePage({ article, original = false, onBack, onCompare, onCo
           <div role="tabpanel" id="article-content" aria-labelledby={`article-tab-${tab}`} tabIndex={0} className="outline-offset-4">
             {easy && !article.easyParagraphs.length && <div className="mt-6"><p className="text-sm text-muted">쉬운말로 변환하면 본문과 핵심 요약을 볼 수 있어요.</p><Button className="mt-4" onClick={onConvert}>쉬운말로 변환하기</Button></div>}
             <div className="mt-6 flex flex-wrap items-center gap-2"><span className={`rounded px-2 text-xs leading-6 font-medium ${easy ? 'bg-brand-soft text-brand' : 'border border-line'}`}>{easy ? 'AI가 쉽게 바꾼 글' : '원문'}</span><span className="text-xs leading-[18px] text-muted">{easy ? '어려운 표현을 쉬운 말로 바꿨어요' : '언론사가 쓴 기사 그대로예요'}</span></div>
-            {easy && <div className="mt-6 flex gap-2"><button type="button" onClick={() => summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">핵심 요약<Icon name="chevron-down" /></button>{(article.reports.length > 0 || article.comparisonNotice) && <button type="button" onClick={onCompare} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-300 px-3 py-2 text-sm leading-[21px] focus-visible:outline-2">언론사 비교{article.reports.length > 0 && ` ${article.reports.length}`}</button>}</div>}
+            {easy && <div className="mt-6 flex gap-2"><button type="button" onClick={() => summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full border border-[#d1d8e0] px-3 text-[13px] leading-5 font-medium text-secondary focus-visible:outline-2">핵심 요약<Icon name="chevron-down" /></button><span className="inline-flex h-8 items-center rounded-full border border-[#d1d8e0] px-3 text-[13px] leading-5 font-medium text-secondary">{article.reports.length > 0 ? `${article.reports.length}개의 언론사 비교` : '언론사 비교'}</span></div>}
             <div ref={bodyRef} className="mt-6 flex flex-col gap-4">
               {paragraphs.map((paragraph, index) => (
                 <div key={`${tab}-${index}`} className="relative">
@@ -76,6 +77,19 @@ export function ArticlePage({ article, original = false, onBack, onCompare, onCo
               ))}
             </div>
             {easy && article.summary.length > 0 && <section ref={summaryRef} aria-labelledby="summary-heading" className="mt-6 scroll-mt-5 rounded-2xl bg-[#eaf0f7] p-4"><h2 id="summary-heading" className="text-base leading-6 font-bold">핵심 요약</h2><ul className="mt-2 list-disc space-y-2 pl-4 text-sm leading-[21px]">{article.summary.map((item) => <li key={item}>{item}</li>)}</ul></section>}
+            {easy && article.reports.length > 0 && (
+              <section aria-labelledby="related-heading" className="-mx-5 mt-6 border-t-[6px] border-[#eaf0f7] px-5 pt-6">
+                <h2 id="related-heading" className="text-lg leading-[26px] font-bold">다른 언론사는 어떻게 보도했을까?</h2>
+                <p className="mt-2 text-sm leading-[21px] text-muted">같은 사건을 다룬 기사 {article.reports.length}개를 옆으로 넘겨 비교해 보세요.</p>
+                {article.comparison && <div className="mt-4 rounded-lg bg-[#eaf0f7] p-4">
+                  <h3 className="text-sm leading-[18px] font-bold">보도 차이</h3>
+                  <p className="mt-2 text-sm leading-[21px]">{article.reports.every(report => report.viewpoint)
+                    ? article.reports.map(report => report.publisher + ': ' + report.viewpoint).join(' · ')
+                    : article.comparison}</p>
+                </div>}
+                <RelatedReportsCarousel reports={article.reports} onRelated={onRelated} />
+              </section>
+            )}
           </div>
         </div>
         <div className="px-5 pb-6">
