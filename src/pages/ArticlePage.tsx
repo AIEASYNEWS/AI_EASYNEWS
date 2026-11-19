@@ -77,6 +77,15 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
               ))}
             </div>
             {easy && article.summary.length > 0 && <section ref={summaryRef} aria-labelledby="summary-heading" className="mt-6 scroll-mt-5 rounded-2xl bg-[#eaf0f7] p-4"><h2 id="summary-heading" className="text-base leading-6 font-bold">핵심 요약</h2><ul className="mt-2 list-disc space-y-2 pl-4 text-sm leading-[21px]">{article.summary.map((item) => <li key={item}>{item}</li>)}</ul></section>}
+            {easy && Boolean(article.sourcePositions?.length) && <section aria-labelledby="source-positions-heading" className="mt-6">
+              <h2 id="source-positions-heading" className="text-lg font-bold">이 기사에 나온 입장</h2>
+              <ul className="mt-3 space-y-3">{article.sourcePositions?.map(position =>
+                <li key={position.evidence} className="rounded-xl border border-line p-4">
+                  <h3 className="text-sm font-bold">{position.speaker}</h3>
+                  <blockquote className="mt-2 border-l-2 border-brand pl-3 text-sm leading-6">{position.evidence}</blockquote>
+                </li>)}</ul>
+              <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-muted underline">{article.publisher} 원문 보기</a>
+            </section>}
             {easy && article.reports.length > 0 && (
               <section aria-labelledby="related-heading" className="-mx-5 mt-6 border-t-[6px] border-[#eaf0f7] px-5 pt-6">
                 <h2 id="related-heading" className="text-lg leading-[26px] font-bold">다른 언론사는 어떻게 보도했을까?</h2>
@@ -95,15 +104,6 @@ export function ArticlePage({ article, original = false, onBack, onRelated, onCo
         <div className="px-5 pb-6">
           <div className="mt-3 flex gap-4 text-xs leading-[18px] text-muted"><button type="button" className="cursor-pointer underline" onClick={() => { void navigator.clipboard.writeText(article.sourceUrl).then(() => setCopyStatus('기사 주소를 복사했어요.')).catch(() => setCopyStatus('복사하지 못했어요. 원문 링크를 이용해 주세요.')) }}>기사 URL 복사</button><a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">언론사 원문 열기</a></div>{copyStatus && <p role="status" className="mt-2 text-xs text-muted">{copyStatus}</p>}
         </div>
-        {easy && Boolean(article.sourcePositions?.length) && <section aria-labelledby="source-positions-heading" className="px-5 pb-6">
-          <h2 id="source-positions-heading" className="text-lg font-bold">이 기사에 나온 입장</h2>
-          <ul className="mt-3 space-y-3">{article.sourcePositions?.map(position =>
-            <li key={position.evidence} className="rounded-xl border border-line p-4">
-              <h3 className="text-sm font-bold">{position.speaker}</h3>
-              <blockquote className="mt-2 border-l-2 border-brand pl-3 text-sm leading-6">{position.evidence}</blockquote>
-            </li>)}</ul>
-          <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-muted underline">{article.publisher} 원문 보기</a>
-        </section>}
       </PageLayout>
       {questionSentence && <ArticleQuestionSheet key={questionSentence} sentence={questionSentence} articleId={article.id} sourceUrl={article.sourceUrl} onClose={() => { setQuestionSentence(''); setSelection(null) }} />}
     </>
