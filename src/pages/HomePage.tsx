@@ -41,7 +41,7 @@ export function HomePage({ viewer, sourceUrl, onUrlChange, quotaText, failed, on
     <>
       <PageLayout
         title="홈"
-        header={<><span className="text-xl leading-7 font-bold">쉬운말 뉴스</span><button type="button" aria-label="알림" onClick={onNotifications} className="relative -mr-2 flex size-10 cursor-pointer items-center justify-center rounded-lg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2"><Icon name={unread ? 'notification' : 'bell'} /></button></>}
+        header={<><img src="/images/home/aleum-logo.svg" alt="aleum" width="96" height="32" className="h-8 w-24 object-contain" /><button type="button" aria-label="알림" onClick={onNotifications} className="relative -mr-2 flex size-10 cursor-pointer items-center justify-center rounded-lg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2"><Icon name={unread ? 'notification' : 'bell'} /></button></>}
         contentClassName="px-5 pt-3 pb-6"
         footer={<BottomNavigation onHome={() => document.querySelector('main')?.scrollTo({ top: 0 })} onExplore={onExplore} onMyPage={onMyPage} />}
       >
