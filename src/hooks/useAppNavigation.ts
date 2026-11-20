@@ -4,7 +4,7 @@ import type { AppPage, AppRoute } from '../types/navigation'
 const paths: Record<AppPage, string> = {
   home: '/home', welcome: '/onboarding', login: '/login', signup: '/signup',
   profile: '/settings/profile', interests: '/settings/interests',
-  article: '/articles/read', chat: '/chat', chats: '/chats', subscription: '/subscription', explore: '/explore', my: '/my',
+  article: '/articles/read', chat: '/chat', chats: '/chats', subscription: '/subscription', explore: '/explore', my: '/my', matches: '/matches', notifications: '/notifications',
 }
 
 function subscribe(callback: () => void) {

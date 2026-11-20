@@ -13,9 +13,10 @@ const youthJob = {
 
 test('scores interests 50 + age/occupation 30 + timeliness 20 and lists the matched conditions', () => {
   const match = scoreMatch(reader, youthJob, now)
-  assert.deepEqual([match.interest, match.personal, match.timeliness], [40, 28, 20])
-  assert.equal(match.score, 88)
+  assert.deepEqual([match.interest, match.personal, match.timeliness], [40, 25, 20])
+  assert.equal(match.score, 85)
   assert.equal(match.grade, '잘 맞아요')
+  assert.deepEqual(match.labels, ['내 상황 일치'])
   assert.deepEqual(match.matchedTags, ['#취업', '#청년정책', '#20대', '#대학생'])
   const keyword = scoreMatch(reader, { ...youthJob, title: '국가장학금 2학기 신청 다음 주 마감' }, now)
   assert.equal(keyword.interest, 50)
@@ -25,7 +26,7 @@ test('scores interests 50 + age/occupation 30 + timeliness 20 and lists the matc
 test('readers without interests or profile, and untagged stories, get neutral partial scores', () => {
   const match = scoreMatch({ topicIds: [], customKeywords: [] }, { ...youthJob, tags: undefined }, now)
   assert.equal(match.interest, 0)
-  assert.equal(match.personal, 14)
+  assert.equal(match.personal, 15)
   assert.equal(grade(59), '조금 맞아요')
 })
 
@@ -47,8 +48,8 @@ test('the feed counts the last 24 hours and lists only stories of 60% or more, b
   assert.equal(feed.total, 3)
   assert.deepEqual(feed.items.map(item => item.id), [youthJob.newsKey, second.newsKey])
   assert.equal(feed.items[0].why, youthJob.tags.why)
-  assert.equal(feed.items[0].match.score, 88)
-  assert.equal(feed.items[1].match.score, 78)
+  assert.equal(feed.items[0].match.score, 85)
+  assert.equal(feed.items[1].match.score, 76)
 })
 
 test('scores spread out instead of collapsing onto one value', () => {
@@ -59,7 +60,7 @@ test('scores spread out instead of collapsing onto one value', () => {
     scoreMatch(reader, { ...broad, publishedAt: hoursAgo(9) }, now).score,
     scoreMatch(reader, { ...broad, tags: { ...broad.tags, topics: ['culture', 'youth'] } }, now).score,
   ]
-  assert.deepEqual(scores, [88, 74, 70, 66])
+  assert.deepEqual(scores, [85, 73, 69, 65])
 })
 
 test('similar stories come from other publishers and share the subject', () => {
@@ -118,4 +119,15 @@ test('keyword expansion drops the keyword itself and returns nothing for meaning
   assert.deepEqual(await expandKeyword('백엔드'), { meaningful: true, terms: ['서버 개발', 'API'] })
   mock.mock.mockImplementation(async () => reply({ meaningful: false, terms: ['아무거나'] }))
   assert.deepEqual(await expandKeyword('흠흠..냐'), { meaningful: false, terms: [] })
+})
+
+test('사는 지역 counts 10 of the reader-fit 30: same 시·군·구 > same 시·도 > nationwide > another place', () => {
+  const local = { ...reader, region: { sido: '경상북도', sigungu: '경산시' } }
+  const at = regions => scoreMatch(local, { ...youthJob, tags: { ...youthJob.tags, regions } }, now)
+  const own = at(['경상북도 경산시'])
+  assert.equal(own.personal, 30)
+  assert.deepEqual(own.labels, ['내 상황 일치', '지역 일치'])
+  assert.ok(own.matchedTags.includes('#경산시'))
+  assert.deepEqual([at(['경상북도']).personal, at([]).personal, at(['부산광역시 해운대구']).personal], [28, 25, 21])
+  assert.deepEqual(at(['부산광역시 해운대구']).labels, ['내 상황 일치'])
 })

@@ -4,11 +4,12 @@ import { adminServices } from './firebase.js'
 import { getConfig } from './config.js'
 import { AppError } from './errors.js'
 import { newsIdentity } from './newsCatalog.js'
+import { regionKey, regionLabel, regionQuery } from './regions.js'
 
 export const usageDay = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
 const userRef = uid => adminServices().db.collection('users').doc(uid)
 
-const profileFields = ['topicIds', 'customKeywords', 'ageGroup', 'gender', 'occupation', 'occupationOther', 'nickname', 'privacyConsent', 'completed', 'keywordWeights', 'notificationsEnabled']
+const profileFields = ['topicIds', 'customKeywords', 'ageGroup', 'gender', 'occupation', 'occupationOther', 'region', 'nickname', 'privacyConsent', 'completed', 'keywordWeights', 'notificationsEnabled']
 export const nicknameKey = nickname => nickname.normalize('NFKC').toLocaleLowerCase('ko')
 
 export async function getProfile(uid) {
@@ -20,6 +21,11 @@ export async function getProfile(uid) {
 /** Nicknames are unique across accounts; a reservation document is swapped atomically with the profile. */
 export async function saveProfile(uid, profile) {
   const db = adminServices().db
+  // The collector searches every place readers live in (news.readRegionsInUse).
+  if (profile.region) {
+    await db.collection('regionsInUse').doc(regionKey(profile.region))
+      .set({ label: regionLabel(profile.region), query: regionQuery(profile.region), lastUsedAt: Date.now() }).catch(() => {})
+  }
   if (profile.nickname === undefined) {
     await userRef(uid).set({ ...profile, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
     return profile

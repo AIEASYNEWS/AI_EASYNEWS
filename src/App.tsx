@@ -16,6 +16,8 @@ import { SplashPage } from './pages/SplashPage'
 import { SubscriptionPage } from './pages/SubscriptionPage'
 import { ExplorePage } from './pages/ExplorePage'
 import { MyPage } from './pages/MyPage'
+import { MatchesPage } from './pages/MatchesPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 
 /** Loads the saved profile before showing an edit screen (A1-1 내 정보 / A1-2 관심 분야 수정). */
 function ProfileEditRoute({ kind, onBack, onSaved }: { kind: 'info' | 'interests'; onBack: () => void; onSaved: () => void }) {
@@ -72,10 +74,13 @@ export default function App() {
     onBack={back} onHistory={() => navigate('chats')} onArticle={() => navigate('article', { articleId: id })} />
   else if (route.page === 'chats') content = <ChatHistoryPage key={user?.uid} onBack={back} onOpen={roomId => navigate('chat', { articleId: roomId })} />
   else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={back} onActivated={() => replace('home')} />
+  else if (route.page === 'matches') content = <MatchesPage onBack={back} onArticle={articleId => navigate('article', { articleId })} onChats={() => navigate('chats')} />
+  else if (route.page === 'notifications') content = <NotificationsPage key={user?.uid} onBack={back} onArticle={item => navigate('article', { articleId: item.newsKey ?? item.id })} />
   else if (route.page === 'explore') content = <ExplorePage onHome={() => replace('home')} onMyPage={() => replace('my')} onArticle={article => navigate('article', { articleId: article.newsKey ?? article.id })} />
   else if (route.page === 'my') content = <MyPage key={user?.uid} viewer={member ? 'member' : 'guest'} quotaText="무제한" onHome={() => replace('home')} onExplore={() => replace('explore')}
     onSettings={() => navigate('interests')} onLogin={() => navigate('login')} onPlan={() => navigate('subscription')} onArticle={article => navigate('article', { articleId: article.newsKey ?? article.id })} />
-  else content = <HomePage key={user?.uid} member={member} onArticle={articleId => navigate('article', { articleId })} onInterests={() => navigate('interests')}
+  else content = <HomePage key={user?.uid} member={member} onArticle={articleId => navigate('article', { articleId })}
+    onMore={() => navigate('matches')} onNotifications={() => navigate('notifications')}
     onProfile={() => navigate(member ? 'profile' : 'signup')} onChats={() => navigate('chats')} onLogin={() => navigate('login')}
     onExplore={() => replace('explore')} onMyPage={() => replace('my')} />
 

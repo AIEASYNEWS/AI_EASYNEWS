@@ -19,6 +19,7 @@ export interface UserProfile extends InterestPreferences {
   gender?: Gender
   occupation?: Occupation
   occupationOther?: string
+  region?: { sido: string; sigungu: string }
   nickname?: string
   privacyConsent?: boolean
 }

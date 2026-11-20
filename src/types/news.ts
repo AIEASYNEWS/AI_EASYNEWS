@@ -34,6 +34,7 @@ export interface MatchResult {
   personal: number
   timeliness: number
   matchedTags: string[]
+  labels: string[]
 }
 
 export interface FeedItem extends NewsItem {
@@ -52,6 +53,10 @@ export interface FeedResponse {
   hasInterests: boolean
   profileComplete: boolean
   waitingForCollection: boolean
+  topReason: string | null
+  region: { sido: string; sigungu: string } | null
+  topicIds: TopicId[]
+  customKeywords: string[]
 }
 
 export interface SimilarArticle { id: string; title: string; publisher: string; publishedAt: string; sourceUrl: string; excerpt: string }
@@ -59,7 +64,7 @@ export interface SimilarArticle { id: string; title: string; publisher: string; 
 export interface FeedDetail extends FeedItem {
   nickname: string
   reason: string | null
-  similar: SimilarArticle[]
+  region: { sido: string; sigungu: string } | null
   feedback: 'good' | 'bad' | null
   bookmarked: boolean
   converted: NewsArticle | null

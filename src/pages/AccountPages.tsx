@@ -86,7 +86,7 @@ export function SignupPage({ onLogin, onDone }: { onLogin: () => void; onDone: (
         setCreated(true)
       }
       await saveProfile({
-        ageGroup: draft.ageGroup, gender: draft.gender, occupation: draft.occupation, occupationOther: draft.occupation === 'other' ? draft.occupationOther.trim() : '',
+        ageGroup: draft.ageGroup, gender: draft.gender, occupation: draft.occupation, occupationOther: draft.occupation === 'other' ? draft.occupationOther.trim() : '', region: draft.region,
         privacyConsent: true, topicIds: draft.topicIds, customKeywords: draft.customKeywords, nickname: draft.nickname.trim(), completed: true,
       })
       onDone()
@@ -144,7 +144,7 @@ export function ProfileEditPage({ kind, initial, onBack, onSaved }: { kind: 'inf
     setPending(true); setError('')
     try {
       await saveProfile(kind === 'info'
-        ? { ageGroup: draft.ageGroup, gender: draft.gender, occupation: draft.occupation, occupationOther: draft.occupation === 'other' ? draft.occupationOther.trim() : '', privacyConsent: true }
+        ? { ageGroup: draft.ageGroup, gender: draft.gender, occupation: draft.occupation, occupationOther: draft.occupation === 'other' ? draft.occupationOther.trim() : '', region: draft.region, privacyConsent: true }
         : { topicIds: draft.topicIds, customKeywords: draft.customKeywords, completed: true })
       onSaved()
     } catch (cause) { setError((cause as Error).message) } finally { setPending(false) }

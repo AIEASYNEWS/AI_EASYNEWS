@@ -59,8 +59,9 @@ test('scheduled HUB collection persists once, then Explore and topic feeds read 
       pubDate: new Date(now - i * minute).toISOString(),
     })) })
   })
-  await collectNews(db)
-  await collectNews(db)
+  const offline = { imageLimit: 0, regions: async () => [] }
+  await collectNews(db, offline)
+  await collectNews(db, offline)
   assert.equal(requests, 18)
   upstream.mock.mockImplementation(() => { throw Error('request-time provider call') })
   const load = () => readStoredNews(db)

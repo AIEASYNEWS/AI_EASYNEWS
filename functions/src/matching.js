@@ -4,6 +4,7 @@ import { TOPIC_IDS, TOPIC_LABELS } from './config.js'
 import { aiConfigured, complete, parseAiJson } from './ai.js'
 import { clearNewsCache } from './newsCatalog.js'
 import { publisherKey } from './news.js'
+import { normalizeRegion, regionLabel } from './regions.js'
 
 export const AGE_GROUPS = { teens: '10대', early20s: '20대 초반', late20s: '20대 후반', thirties: '30대', forties: '40대', fiftyPlus: '50대 이상' }
 export const GENDERS = { female: '여성', male: '남성', none: '선택 안 함' }
@@ -25,6 +26,7 @@ const tagSchema = z.object({
     occupations: z.array(z.enum([...OCCUPATION_IDS, 'all'])).min(1).max(6),
     difficult: z.boolean(),
     why: z.string().trim().max(60).default(''),
+    regions: z.array(z.string().trim().max(30)).max(4).default([]),
   }).catch(null)).max(30),
 })
 
@@ -39,12 +41,14 @@ export async function tagArticles(items, signal) {
 - ages: 이 기사가 특히 필요한 독자 연령대(${AGE_IDS.join(', ')}). 특정 연령과 상관없으면 ["all"].
 - occupations: 특히 필요한 독자 직종(${OCCUPATION_IDS.join(', ')}). secondary는 중·고등학생, university는 대학생, jobseeker는 취업 준비생, employee는 직장인, selfEmployed는 자영업, freelancer는 프리랜서입니다. 상관없으면 ["all"].
 - difficult: 전문 용어·한자어·정책 용어 등 쉬운 말로 바꿔 줄 어려운 표현이 있으면 true.
+- regions: 기사가 특정 지역 주민에게 해당하는 소식이면 그 지역을 "시·도 시·군·구"(예: "경상북도 경산시") 또는 "시·도"로 최대 4개. 전국 소식이면 빈 배열. hint가 있으면 수집할 때 검색한 지역이니 참고만 하세요.
 - why: 누구에게 왜 필요한 기사인지 쉬운 한국어 한 문장(40자 이내, "~해요"로 끝맺기). 기사에 없는 사실은 쓰지 마세요.
-JSON만 반환하세요: {"items":[{"id":"제공된 id","topics":["jobs"],"keywords":["낱말"],"ages":["early20s"],"occupations":["university"],"difficult":true,"why":"졸업 예정 4학년도 신청할 수 있어요"}]}
-<articles>${JSON.stringify(items.map(item => ({ id: item.newsKey, title: item.title, summary: (item.excerpt || '').slice(0, 300) })))}</articles>`
+JSON만 반환하세요: {"items":[{"id":"제공된 id","topics":["jobs"],"keywords":["낱말"],"ages":["early20s"],"occupations":["university"],"difficult":true,"why":"졸업 예정 4학년도 신청할 수 있어요","regions":[]}]}
+<articles>${JSON.stringify(items.map(item => ({ id: item.newsKey, title: item.title, summary: (item.excerpt || '').slice(0, 300), ...(item.regionHint ? { hint: item.regionHint } : {}) })))}</articles>`
   const result = parseAiJson(await complete(tagInstruction, prompt, { signal, maxTokens: 4000 }), tagSchema)
   const known = new Set(items.map(item => item.newsKey))
-  return new Map(result.items.filter(entry => entry && known.has(entry.id)).map(({ id, ...tags }) => [id, tags]))
+  return new Map(result.items.filter(entry => entry && known.has(entry.id)).map(({ id, regions, ...tags }) =>
+    [id, { ...tags, regions: [...new Set(regions.map(normalizeRegion).filter(Boolean))] }]))
 }
 
 let tagging = null
@@ -142,17 +146,24 @@ export function scoreMatch(profile, item, now = Date.now()) {
   }
   interest = clamp(interest, 0, 50)
 
-  // Reader fit: a story aimed at a narrow group that includes the reader beats one meant for everyone.
+  // Reader fit (30): age, occupation and 사는 지역 at 10 each. A story aimed at a narrow group that includes the reader scores highest.
   const fit = (value, targets, known) => {
-    if (!value) return { points: 7, matched: false }
-    if (!targets?.length) return { points: 8, matched: false }
-    if (targets.includes(value)) return { points: Math.max(11, 16 - targets.length), matched: true }
-    if (targets.includes('all') || !known.includes(value)) return { points: 9, matched: false }
-    return { points: 3, matched: false }
+    if (!value || !targets?.length) return { points: 5, matched: false }
+    if (targets.includes(value)) return { points: targets.length <= 2 ? 10 : targets.length === 3 ? 9 : 8, matched: true }
+    if (targets.includes('all') || !known.includes(value)) return { points: 6, matched: false }
+    return { points: 2, matched: false }
   }
   const age = fit(profile.ageGroup, item.tags?.ages, AGE_IDS)
-  const job = fit(profile.occupation === 'other' ? '' : profile.occupation, item.tags?.occupations, OCCUPATION_IDS)
-  const personal = age.points + (profile.occupation === 'other' ? 8 : job.points)
+  const job = profile.occupation === 'other' ? { points: 6, matched: false } : fit(profile.occupation, item.tags?.occupations, OCCUPATION_IDS)
+  const place = (() => {
+    const regions = item.tags?.regions
+    // No 사는 지역, an untagged story or a nationwide story: neutral.
+    if (!profile.region || !regions?.length) return { points: 5, matched: false }
+    if (regions.includes(regionLabel(profile.region))) return { points: 10, matched: true }
+    if (regions.includes(profile.region.sido)) return { points: 8, matched: true }
+    return { points: 1, matched: false }
+  })()
+  const personal = age.points + job.points + place.points
 
   // Timeliness decays by half a point per hour: 20 now, 14 after 12 hours, 8 after a day.
   const hours = (now - articleTime(item)) / 3600_000
@@ -165,8 +176,15 @@ export function scoreMatch(profile, item, now = Date.now()) {
     ...relatedHits,
     ...(age.matched ? [ageTag[profile.ageGroup]] : []),
     ...(job.matched ? [OCCUPATIONS[profile.occupation]] : []),
+    ...(place.matched ? [profile.region.sigungu] : []),
   ])].map(tag => `#${tag.replace(/\s+/g, '')}`)
-  return { score, grade: grade(score), interest, personal, timeliness, matchedTags }
+  // Short reasons shown on home cards (Figma A2: 내 상황 일치 · 지역 일치 · 키워드 일치).
+  const labels = [
+    ...(age.matched || job.matched ? ['내 상황 일치'] : []),
+    ...(place.matched ? ['지역 일치'] : []),
+    ...(keywordHits.length || relatedHits.length ? ['키워드 일치'] : []),
+  ]
+  return { score, grade: grade(score), interest, personal, timeliness, matchedTags, labels }
 }
 
 export function feedItem(item, match) {
@@ -209,6 +227,7 @@ export function similarArticles(item, catalog, limit = 3) {
 
 export function profileSummary(profile) {
   return [
+    profile.region && profile.region.sigungu,
     profile.ageGroup && AGE_GROUPS[profile.ageGroup],
     profile.occupation && (profile.occupation === 'other' ? profile.occupationOther || OCCUPATIONS.other : OCCUPATIONS[profile.occupation]),
     ...(profile.topicIds || []).map(id => TOPIC_LABELS[id]),
