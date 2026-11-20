@@ -49,14 +49,19 @@ function Tabs({ tab, onTab }: { tab: ArticleTab; onTab: (tab: ArticleTab) => voi
   </div>
 }
 
-/** Body text that starts a chat when a part of it is dragged. */
+/** Body text whose dragged part can be sent to 소식이 with the button shown after the drag ends. */
 function AskableBody({ children, onAsk }: { children: ReactNode; onAsk: (text: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
-  const selection = useDragToAsk(ref, onAsk)
+  const selection = useDragToAsk(ref)
+  const ask = (text: string) => { window.getSelection()?.removeAllRanges(); onAsk(text) }
   return <div ref={ref} className="relative">
-    {selection && <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => onAsk(selection.text)}
-      style={{ top: Math.max(selection.top - 40, -8), left: selection.left }}
-      className="absolute z-10 h-8 cursor-pointer rounded-full bg-ink px-3 text-xs font-medium whitespace-nowrap text-white shadow-md">손을 떼면 소식이에게 바로 물어볼 수 있어요</button>}
+    {selection && (selection.dragging
+      ? <span role="status" style={{ top: Math.max(selection.top - 40, -8), left: selection.left }}
+        className="pointer-events-none absolute z-10 h-8 rounded-full bg-ink/80 px-3 text-xs leading-8 font-medium whitespace-nowrap text-white">드래그한 부분을 소식이에게 물어볼 수 있어요</span>
+      : <button type="button" data-ask-button onMouseDown={event => event.preventDefault()} onClick={() => ask(selection.text)}
+        style={{ top: selection.bottom + 8, left: selection.left }}
+        className="absolute z-10 flex h-9 cursor-pointer items-center gap-1 rounded-full bg-brand pr-3 pl-1 text-[13px] font-bold whitespace-nowrap text-white shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+        <Character size={32} className="scale-75 border-white bg-white" />소식이에게 물어보기</button>)}
     <div className="flex flex-col gap-4 select-text selection:bg-brand-soft selection:text-ink">{children}</div>
   </div>
 }
@@ -212,7 +217,7 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
             {converted.background && <section aria-labelledby="background-heading" className="mt-4 rounded-xl border border-line p-4">
               <h2 id="background-heading" className="flex items-center gap-1 text-[13px] font-bold"><LineIcon name="info" size={16} />읽기 전에 알아 두면 좋아요</h2>
               <p className="mt-2 text-[13px] leading-5 text-secondary">{converted.background}</p></section>}
-            <p className="mt-4 text-xs leading-[18px] text-muted">본문을 드래그하면 그 부분을 소식이에게 바로 물어볼 수 있어요.</p>
+            <p className="mt-4 text-xs leading-[18px] text-muted">본문을 드래그하고 ‘소식이에게 물어보기’를 누르면 그 부분을 물어볼 수 있어요.</p>
             <div className="mt-4"><AskableBody onAsk={ask}>{converted.easyParagraphs.map((paragraph, index) => <p key={index} className="text-[17px] leading-7 break-keep"><Emphasis text={paragraph} /></p>)}</AskableBody></div>
             {converted.summary.length > 0 && <section aria-labelledby="summary-heading" className="mt-8 rounded-xl bg-surface p-4">
               <h2 id="summary-heading" className="text-sm font-bold">핵심 요약</h2>
