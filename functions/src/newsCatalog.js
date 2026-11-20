@@ -2,8 +2,8 @@ import { createHash, randomInt } from 'node:crypto'
 import { articleId } from './articles.js'
 import { adminServices } from './firebase.js'
 
-// The Explore API exposes 20 pages of 24 recent articles.
-const catalogLimit = 20 * 24
+// Enough recent articles for one day of matching across every topic.
+const catalogLimit = 600
 let recent
 
 export async function readStoredNews(db = adminServices().db) {
@@ -68,7 +68,9 @@ export async function storeNewsCandidates(db, items, observedAt) {
         const item = batch[index]
         const previous = snapshot.data()
         if (previous && (previous.updatedAt > observedAt || fields.every(field => previous[field] === item[field]))) return previous
-        const record = { ...item, firstSeenAt: previous?.firstSeenAt ?? observedAt, updatedAt: observedAt }
+        const record = { ...item, firstSeenAt: previous?.firstSeenAt ?? observedAt, updatedAt: observedAt,
+          // AI matching tags describe the same story; keep them while the headline is unchanged.
+          ...(previous?.tags && previous.title === item.title ? { tags: previous.tags } : {}) }
         tx.set(snapshot.ref, record)
         return record
       })
@@ -77,6 +79,15 @@ export async function storeNewsCandidates(db, items, observedAt) {
     if (recent?.db === db) recent = undefined
   }
   return stored
+}
+
+export function clearNewsCache() { recent = undefined }
+
+export async function getNewsItem(id, db = adminServices().db) {
+  const cached = recent?.db === db && Date.now() < recent.expires ? (await recent.result.catch(() => ({ items: [] }))).items.find(item => item.newsKey === id) : undefined
+  if (cached) return cached
+  const snapshot = await db.collection('newsArticles').doc(id).get()
+  return snapshot.exists ? snapshot.data() : null
 }
 
 export async function topicNews(topicIds, load = readStoredNews) {

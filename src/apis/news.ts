@@ -4,7 +4,6 @@ import { apiRequest, ApiError } from './client'
 import { getIdToken } from './firebase'
 
 export interface NewsResponse { items: NewsItem[]; total: number; hasMore: boolean; source: 'catalog' }
-export interface RecommendedNewsResponse extends Omit<NewsResponse, 'source'> { source?: NewsResponse['source']; waitingForCollection?: boolean }
 
 export function getNews(options: { query?: string; topic?: TopicId | ''; sort?: string; page?: number } = {}, signal?: AbortSignal) {
   const params = new URLSearchParams(Object.entries(options).map(([key, value]) => [key, String(value)]))
@@ -12,14 +11,12 @@ export function getNews(options: { query?: string; topic?: TopicId | ''; sort?: 
 }
 export const getArticlePreview = (sourceUrl: string, signal?: AbortSignal) => apiRequest<NewsArticle>('/articles/preview', { method: 'POST', body: JSON.stringify({ sourceUrl }), signal, authenticated: false })
 export const getSavedArticle = (id: string, signal?: AbortSignal) => apiRequest<NewsArticle>(`/articles/${encodeURIComponent(id)}`, { signal })
-export const getArticleComparison = (id: string, signal: AbortSignal) => apiRequest<NewsArticle>(`/articles/${encodeURIComponent(id)}/comparison`, { method: 'POST', signal })
 export const getHistory = (signal?: AbortSignal) => apiRequest<NewsItem[]>('/history', { signal })
 export const getQuota = () => apiRequest<{ remaining: number | null; limit: number | null; unlimited?: boolean; subscriber?: boolean }>('/quota')
-export const askQuestion = (articleId: string, sentence: string, question: string, sourceUrl: string, signal?: AbortSignal) => apiRequest<{ answer: string }>('/questions', { method: 'POST', body: JSON.stringify({ articleId, sentence, question, sourceUrl }), signal })
 
 export async function convertArticle(sourceUrl: string, onProgress: (step: number) => void, signal: AbortSignal): Promise<NewsArticle> {
   const token = await getIdToken()
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/convert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ sourceUrl, deferComparison: true }), signal })
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/convert`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ sourceUrl }), signal })
   if (!response.ok) {
     const error = await response.json().catch(() => null)
     throw new ApiError(error?.message || '기사 변환을 시작하지 못했어요.', error?.code)

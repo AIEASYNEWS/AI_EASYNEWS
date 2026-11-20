@@ -9,6 +9,8 @@ export const cleanText = value => String(value || '').replace(/\s+/g, ' ').trim(
 
 export function inferTopic(title) {
   const rules = [
+    ['youth', /청년|대학생|사회초년생|학자금|장학금/],
+    ['jobs', /취업|채용|일자리|구직|고용|공채|인턴|이직/],
     ['technology', /인공지능|반도체|과학|로봇|우주|데이터|소프트웨어|AI\b|IT\b/i],
     ['health', /건강|의료|병원|접종|의사|질병|치료|독감|암\s/],
     ['economy', /경제|금리|증시|주가|주식|부동산|환율|은행|수출|투자|물가|대출/],

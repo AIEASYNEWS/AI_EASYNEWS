@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
@@ -6,35 +5,41 @@ import { getConfig, TOPIC_IDS } from './config.js'
 import { adminServices, requireUser } from './firebase.js'
 import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
-import { readArticle } from './articles.js'
-import { getExploreNews, relatedCandidates } from './news.js'
-import { buildComparison } from './comparison.js'
-import { assertAiConfigured, rewriteArticle, compareArticles, answerQuestion } from './ai.js'
-import { topicNews, topicNotifications } from './newsCatalog.js'
-import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead, saveComparison } from './store.js'
+import { readArticle, articleId } from './articles.js'
+import { parsePublicUrl } from './safeFetch.js'
+import { getExploreNews } from './news.js'
+import { assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
+import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
+import { AGE_GROUPS, GENDERS, OCCUPATIONS, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, similarArticles, tagStoredNews, weightKeys } from './matching.js'
+import {
+  getProfile, saveProfile, nicknameAvailable, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead,
+  getFeedbackMap, saveFeedback, getArticleState, setBookmark, getCachedReason, saveReason, findConvertedArticle,
+  listChatRooms, getChatRoom, appendChatExchange, deleteChatRoom,
+} from './store.js'
 
 const urlSchema = z.object({ sourceUrl: z.string().url().max(2048) }).strict()
-const profileSchema = z.object({ topicIds: z.array(z.enum(TOPIC_IDS)).max(7).refine(ids => new Set(ids).size === ids.length), completed: z.boolean() }).strict()
-const questionSchema = z.object({ articleId: z.string().regex(/^[a-f0-9]{32}$/), sourceUrl: z.string().url().max(2048), sentence: z.string().trim().min(1).max(5000), question: z.string().trim().min(1).max(1000) }).strict()
+const keywordSchema = z.string().trim().min(1).max(20).regex(/^[\p{L}\p{N}][\p{L}\p{N} ·.-]*$/u)
+export const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]{2,10}$/
+const profileSchema = z.object({
+  topicIds: z.array(z.enum(TOPIC_IDS)).max(TOPIC_IDS.length).refine(ids => new Set(ids).size === ids.length),
+  customKeywords: z.array(keywordSchema).max(10).refine(words => new Set(words).size === words.length),
+  ageGroup: z.enum(Object.keys(AGE_GROUPS)),
+  gender: z.enum(Object.keys(GENDERS)),
+  occupation: z.enum(Object.keys(OCCUPATIONS)),
+  occupationOther: z.string().trim().max(30),
+  nickname: z.string().trim().regex(NICKNAME_PATTERN),
+  privacyConsent: z.literal(true),
+  completed: z.boolean(),
+}).partial().strict()
+const newsIdSchema = z.string().regex(/^[a-f0-9]{32}$/)
+const chatSchema = z.object({ text: z.string().trim().max(1000).default(''), quote: z.string().trim().max(2000).optional() }).strict()
+  .refine(value => value.text || value.quote)
 const rate = new Map()
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
+const roomArticle = item => ({ id: item.newsKey, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt || '', topicId: item.tags?.topics?.[0] || item.topicId, sourceUrl: item.sourceUrl })
+
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
-  const comparisons = new Map()
-  const searches = new Map()
-  function findSavedCandidates(article) {
-    const { revision, keywords, queries } = article.comparisonPlan
-    const hit = searches.get(revision)
-    if (hit && hit.until > Date.now()) return hit.promise
-    const promise = Promise.resolve().then(() => findRelated(article, keywords, { queries, signal: AbortSignal.timeout(30000) }))
-      .catch(error => {
-        if (searches.get(revision)?.promise === promise) searches.delete(revision)
-        throw error
-      })
-    searches.set(revision, { until: Date.now() + 120000, promise })
-    if (searches.size > 100) searches.delete(searches.keys().next().value)
-    return promise
-  }
   const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
   app.use((request, response, next) => {
@@ -42,7 +47,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     if (origin && !getConfig().allowedOrigins.includes(origin)) return next(new AppError('ORIGIN_REJECTED', '이 주소에서는 요청할 수 없어요.', 403))
     if (origin) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin') }
     response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
+    response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
     response.setHeader('Cache-Control', 'no-store')
     response.setHeader('X-Content-Type-Options', 'nosniff')
     if (request.method === 'OPTIONS') return response.sendStatus(204)
@@ -67,7 +72,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     const query = z.object({ query: z.string().max(100).default(''), topic: z.enum(['', ...TOPIC_IDS]).default(''), sort: z.enum(['latest', 'oldest']).default('latest'), page: z.coerce.number().int().min(1).max(20).default(1) }).parse(request.query)
     response.json(await getExploreNews(query))
   })
-  router.post('/articles/preview', async (request, response) => response.json(await readArticle(urlSchema.parse(request.body).sourceUrl)))
+  router.post('/articles/preview', async (request, response) => response.json(await articleReader(parsePublicUrl(urlSchema.parse(request.body).sourceUrl).href)))
   router.get('/auth/username', async (request, response) => {
     const id = z.string().regex(/^[a-z0-9_]{4,24}$/).parse(request.query.id)
     try {
@@ -77,6 +82,11 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
       if (error.code !== 'auth/user-not-found') throw error
       response.json({ available: true })
     }
+  })
+  router.get('/auth/nickname', async (request, response) => {
+    const nickname = z.string().trim().regex(NICKNAME_PATTERN).parse(request.query.name)
+    const user = request.headers.authorization ? await requireUser(request).catch(() => null) : null
+    response.json({ available: await nicknameAvailable(nickname, user?.uid) })
   })
   router.use(async (request, _response, next) => { request.user = await requireUser(request); next() })
   const memberOnly = (request, _response, next) => next(request.user.anonymous
@@ -102,10 +112,17 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     response.json({ enabled })
   })
   router.get('/profile', async (request, response) => {
-    const { topicIds, completed } = await getProfile(request.user.uid)
-    response.json({ topicIds, completed })
+    const { keywordWeights: _weights, notificationsEnabled: _notifications, ...profile } = await getProfile(request.user.uid)
+    response.json(profile)
   })
-  router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
+  router.put('/profile', async (request, response) => {
+    const update = profileSchema.parse(request.body)
+    if (update.nickname !== undefined && request.user.anonymous) throw new AppError('MEMBER_REQUIRED', '로그인 후 닉네임을 정할 수 있어요.', 403)
+    if (update.occupation && update.occupation !== 'other') update.occupationOther = ''
+    await saveProfile(request.user.uid, update)
+    const { keywordWeights: _weights, notificationsEnabled: _notifications, ...profile } = await getProfile(request.user.uid)
+    response.json(profile)
+  })
   router.get('/quota', async (request, response) => {
     const plan = await subscriptionFor(request.user)
     response.json({ ...(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid)), subscriber: plan.active })
@@ -128,36 +145,82 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     if (!/^[a-f0-9]{32}$/.test(request.params.id)) throw new AppError('INVALID_ID', '기사 주소를 확인해 주세요.')
     response.json(await getArticle(request.user.uid, request.params.id))
   })
-  router.post('/articles/:id/comparison', async (request, response) => {
-    const id = z.string().regex(/^[a-f0-9]{32}$/).parse(request.params.id)
-    const uid = request.user.uid
-    const article = await getArticle(uid, id)
-    if (article.comparisonStatus !== 'pending') return response.json(article)
-    const { revision, keywords, queries } = article.comparisonPlan
-    const key = JSON.stringify([uid, id, revision])
-    let pending = comparisons.get(key)
-    if (!pending) {
-      pending = buildComparison(article, keywords, { queries, findRelated: findSavedCandidates, articleReader, compare })
-        .then(result => saveComparison(uid, article, result)).finally(() => comparisons.delete(key))
-      comparisons.set(key, pending)
-    }
-    response.json(await pending)
-  })
-  router.post('/questions', async (request, response) => {
-    assertAiConfigured()
-    const { articleId, sourceUrl, sentence, question } = questionSchema.parse(request.body)
-    const article = await getArticle(request.user.uid, articleId).catch(async error => {
-      if (error.code !== 'ARTICLE_NOT_FOUND') throw error
-      const original = await articleReader(sourceUrl)
-      if (original.id !== articleId) throw new AppError('ARTICLE_NOT_FOUND', '선택한 문장이 있는 기사를 찾지 못했어요.', 404)
-      return original
+  const loadItem = async id => {
+    const item = await getNewsItem(newsIdSchema.parse(id))
+    if (!item) throw new AppError('NEWS_NOT_FOUND', '기사를 찾지 못했어요. 홈에서 다시 골라 주세요.', 404)
+    return item
+  }
+  router.get('/feed', async (request, response) => {
+    const [profile, feedback, { items }] = await Promise.all([getProfile(request.user.uid), getFeedbackMap(request.user.uid), catalog()])
+    const feed = buildFeed(profile, items, { feedback })
+    // Articles collected before tagging existed are tagged lazily; the next visit gets the AI-backed scores.
+    void tagStoredNews(adminServices().db, items.filter(item => Date.now() - (Date.parse(item.publishedAt) || item.firstSeenAt || 0) < 86400_000), { limit: 45 }).catch(() => {})
+    response.json({
+      ...feed, nickname: profile.nickname || '', summary: profileSummary(profile),
+      hasInterests: Boolean(profile.topicIds.length || profile.customKeywords.length),
+      profileComplete: Boolean(profile.ageGroup && profile.occupation), waitingForCollection: !items.length,
     })
-    await reserveQuestion(request.user.uid)
-    response.json({ answer: await answerQuestion(article, sentence, question) })
+  })
+  router.get('/feed/:id', async (request, response) => {
+    const item = await loadItem(request.params.id)
+    const uid = request.user.uid
+    const [profile, state, converted, { items }] = await Promise.all([getProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl)), catalog()])
+    const profileKey = JSON.stringify(profileSummary(profile))
+    response.json({
+      ...feedItem(item, scoreMatch(profile, item)), nickname: profile.nickname || '',
+      reason: await getCachedReason(uid, item.newsKey, profileKey), similar: similarArticles(item, items),
+      ...state, converted: converted?.easyParagraphs?.length ? converted : null,
+    })
+  })
+  router.post('/feed/:id/reason', async (request, response) => {
+    const item = await loadItem(request.params.id)
+    const uid = request.user.uid
+    const profile = await getProfile(uid)
+    const profileKey = JSON.stringify(profileSummary(profile))
+    const cached = await getCachedReason(uid, item.newsKey, profileKey)
+    if (cached) return response.json({ reason: cached })
+    assertAiConfigured()
+    const text = await reason(profile, item, AbortSignal.timeout(45_000))
+    await saveReason(uid, item.newsKey, profileKey, text)
+    response.json({ reason: text })
+  })
+  router.put('/feed/:id/feedback', async (request, response) => {
+    const { value } = z.object({ value: z.enum(['good', 'bad']) }).strict().parse(request.body)
+    const item = await loadItem(request.params.id)
+    response.json(await saveFeedback(request.user.uid, item.newsKey, value, weightKeys(item)))
+  })
+  router.put('/feed/:id/bookmark', async (request, response) => {
+    const { saved } = z.object({ saved: z.boolean() }).strict().parse(request.body)
+    const item = await loadItem(request.params.id)
+    response.json(await setBookmark(request.user.uid, item.newsKey, saved))
+  })
+  router.get('/chats', async (request, response) => response.json(await listChatRooms(request.user.uid)))
+  router.get('/chats/:id', async (request, response) => {
+    const item = await loadItem(request.params.id)
+    const { room, messages } = await getChatRoom(request.user.uid, item.newsKey)
+    response.json({ article: room?.article || roomArticle(item), room, messages })
+  })
+  router.delete('/chats/:id', async (request, response) => response.json(await deleteChatRoom(request.user.uid, newsIdSchema.parse(request.params.id))))
+  router.post('/chats/:id/messages', async (request, response) => {
+    assertAiConfigured()
+    const { text, quote } = chatSchema.parse(request.body)
+    const uid = request.user.uid
+    const item = await loadItem(request.params.id)
+    const { room, messages } = await getChatRoom(uid, item.newsKey, { withContext: true })
+    let context = room?.context
+    if (!context) {
+      const converted = await findConvertedArticle(uid, articleId(item.sourceUrl))
+      const original = converted || await articleReader(item.sourceUrl, AbortSignal.timeout(20_000)).catch(() => null)
+      context = original ? [...original.originalParagraphs, ...(original.easyParagraphs || [])].join('\n').slice(0, 20_000) : `${item.title}\n${item.excerpt || ''}`
+    }
+    await reserveQuestion(uid)
+    const question = text || '이 부분을 쉬운 말로 풀어 줘'
+    const reply = await answer({ title: item.title, context }, messages, { quote, question }, AbortSignal.timeout(60_000))
+    response.json(await appendChatExchange(uid, item.newsKey, { article: roomArticle(item), context }, { text, quote }, reply))
   })
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
-    const { sourceUrl, deferComparison } = urlSchema.extend({ deferComparison: z.boolean().default(false) }).parse(request.body)
+    const { sourceUrl } = urlSchema.parse(request.body)
     const settle = await reserveConversion(request.user.uid)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }
@@ -168,34 +231,12 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     const send = (type, data) => { if (!response.destroyed) response.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`) }
     const heartbeat = setInterval(() => { if (!response.destroyed) response.write(': heartbeat\n\n') }, 15_000)
     try {
+      // 1: reading the article, 2: finding background, 3: rewriting in easy words.
       send('progress', { step: 1 })
       const article = await articleReader(sourceUrl, controller.signal)
-      if (deferComparison) {
-        const previous = await getArticle(request.user.uid, article.id).catch(error => {
-          if (error.code !== 'ARTICLE_NOT_FOUND') throw error
-          return null
-        })
-        if (previous?.convertedAt > Date.now() - 600000 && previous.title === article.title &&
-            ['ready', 'pending', 'no-candidates', 'no-distinct-perspective'].includes(previous.comparisonStatus) &&
-            JSON.stringify(previous.originalParagraphs) === JSON.stringify(article.originalParagraphs)) {
-          await settle()
-          send('result', previous)
-          return
-        }
-      }
       send('progress', { step: 2 })
-      const { keywords, comparisonQueries = [], ...rewritten } = await rewrite(article, controller.signal)
-      Object.assign(article, rewritten)
-      if (deferComparison) {
-        article.convertedAt = Date.now()
-        article.comparisonStatus = 'pending'
-        article.comparisonPlan = { revision: randomUUID(), keywords, queries: comparisonQueries }
-      } else {
-        send('progress', { step: 3 })
-        Object.assign(article, await buildComparison(article, keywords, {
-          queries: comparisonQueries, signal: controller.signal, findRelated, articleReader, compare,
-        }))
-      }
+      const rewritten = await rewrite(article, controller.signal, step => send('progress', { step }))
+      Object.assign(article, rewritten, { convertedAt: Date.now() })
       controller.signal.throwIfAborted()
       await settle(article)
       send('result', article)

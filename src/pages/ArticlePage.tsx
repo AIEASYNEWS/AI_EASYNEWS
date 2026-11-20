@@ -1,141 +1,255 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { RelatedReportsCarousel } from '../components/article/RelatedReportsCarousel'
-import { ArticleQuestionSheet } from '../components/article/ArticleQuestionSheet'
-import { PageLayout } from '../components/layout/PageLayout'
-import { Icon } from '../components/ui/Icon'
-import type { NewsArticle, RelatedReport } from '../types/news'
-import { formatDate } from '../utils/date'
-import { Button } from '../components/ui/Button'
-import { NewsSkeleton } from '../components/ui/NewsSkeleton'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { getFeedDetail, getReason, sendFeedback, setBookmark } from '../apis/feed'
+import { convertArticle, getArticlePreview } from '../apis/news'
+import { ChatFab, Character } from '../components/v2/Character'
+import { PillButton, TopicLabel } from '../components/v2/Controls'
+import { IconButton, Screen } from '../components/v2/Screen'
+import { LineIcon } from '../components/ui/LineIcon'
+import { RequestState } from '../components/ui/RequestState'
+import { topicLabel } from '../constants/topics'
+import { useDragToAsk } from '../hooks/useDragToAsk'
+import type { FeedDetail, NewsArticle } from '../types/news'
 import { readableArticleParagraphs } from '../utils/articleText'
+import { formatDot, relativeTime } from '../utils/date'
+import { MatchBadge } from './HomePage'
+
+export type ArticleTab = 'original' | 'easy'
+type Conversion = { state: 'idle' } | { state: 'running'; step: number } | { state: 'failed'; message: string }
 
 interface ArticlePageProps {
-  comparisonError: string
-  retryComparison: () => void
-  article: NewsArticle
-  original?: boolean
+  id: string
+  tab: ArticleTab
+  onTab: (tab: ArticleTab) => void
   onBack: () => void
-  onRelated: (report: RelatedReport) => void
-  onConvert: () => void
+  onChat: (quote?: string) => void
+  onQuotaExceeded: () => void
 }
 
-export function ArticlePage({ article, original = false, onBack, onRelated, onConvert, comparisonError, retryComparison }: ArticlePageProps) {
-  const [tab, setTab] = useState(original ? 'original' : 'easy')
-  const [selection, setSelection] = useState<{ text: string; index: number } | null>(null)
-  const [questionSentence, setQuestionSentence] = useState('')
-  const summaryRef = useRef<HTMLElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const easy = tab === 'easy'
-  const paragraphs = useMemo(() => readableArticleParagraphs(easy ? article.easyParagraphs : article.originalParagraphs), [easy, article.easyParagraphs, article.originalParagraphs])
-  const [copyStatus, setCopyStatus] = useState('')
+/** Renders `**강조**` from the easy rewrite as bold text. */
+function Emphasis({ text }: { text: string }) {
+  return <>{text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith('**') && part.endsWith('**') && part.length > 4
+    ? <strong key={index} className="font-bold">{part.slice(2, -2)}</strong> : <span key={index}>{part.replaceAll('**', '')}</span>)}</>
+}
 
-  const views = [
-    { value: 'easy', label: '쉬운말 보기' },
-    { value: 'original', label: '원문 보기' },
-  ]
-  if (article.easyParagraphs.length || article.reports.length) {
-    views.push({ value: 'compare', label: article.reports.length ? `${article.reports.length}개 언론사 비교` : '언론사 비교' })
-  }
+function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
+  return <div className="flex items-center gap-2 text-[13px]">
+    <span className="w-[118px] shrink-0 text-secondary">{label}</span>
+    <span className="h-2 flex-1 overflow-hidden rounded-full bg-line" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
+      <span className="block h-full rounded-full bg-brand" style={{ width: `${Math.round((value / max) * 100)}%` }} />
+    </span>
+    <span className="w-12 shrink-0 text-right text-secondary tabular-nums">{value} / {max}</span>
+  </div>
+}
 
-  function selectView(value: string) {
-    setSelection(null)
-    if (value === 'easy' && !article.easyParagraphs.length) onConvert()
-    else setTab(value)
-  }
+function Tabs({ tab, onTab }: { tab: ArticleTab; onTab: (tab: ArticleTab) => void }) {
+  return <div role="tablist" aria-label="기사 보기 방식" className="flex border-b border-line bg-white">
+    {(['original', 'easy'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
+      className={`h-12 flex-1 cursor-pointer border-b-2 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${tab === value ? 'border-ink font-bold text-ink' : 'border-transparent text-muted'}`}>
+      {value === 'original' ? '원문 보기' : '쉬운말 보기'}</button>)}
+  </div>
+}
+
+/** Body text that starts a chat when a part of it is dragged. */
+function AskableBody({ children, onAsk }: { children: ReactNode; onAsk: (text: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const selection = useDragToAsk(ref, onAsk)
+  return <div ref={ref} className="relative">
+    {selection && <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => onAsk(selection.text)}
+      style={{ top: Math.max(selection.top - 40, -8), left: selection.left }}
+      className="absolute z-10 h-8 cursor-pointer rounded-full bg-ink px-3 text-xs font-medium whitespace-nowrap text-white shadow-md">손을 떼면 소식이에게 바로 물어볼 수 있어요</button>}
+    <div className="flex flex-col gap-4 select-text selection:bg-brand-soft selection:text-ink">{children}</div>
+  </div>
+}
+
+const steps = ['기사를 읽는 중', '배경을 찾는 중', '쉬운 말로 바꾸는 중']
+
+function Converting({ step }: { step: number }) {
+  return <div className="mt-4 rounded-xl border border-line p-4" role="status" aria-live="polite">
+    <div className="flex items-center gap-2"><Character size={32} /><p className="rounded-2xl bg-surface px-3 py-2 text-[13px] leading-5">기사를 쉬운 말로 바꾸고 있어요.<br />잠시만 기다려 주세요.</p></div>
+    <ol className="mt-4 space-y-3">{steps.map((label, index) => {
+      const status = step > index + 1 ? 'done' : step === index + 1 ? 'running' : 'waiting'
+      return <li key={label} className="flex items-center gap-3 text-sm">
+        <span className={`flex size-5 items-center justify-center rounded-full border-2 ${status === 'done' ? 'border-brand bg-brand text-white' : status === 'running' ? 'border-brand' : 'border-line'}`}>
+          {status === 'done' ? <LineIcon name="check" size={12} /> : status === 'running' ? <span className="size-2 animate-pulse rounded-full bg-brand motion-reduce:animate-none" /> : null}</span>
+        <span className={`flex-1 ${status === 'running' ? 'font-bold' : status === 'waiting' ? 'text-muted' : ''}`}>{label}</span>
+        <span className="text-xs text-muted">{status === 'done' ? '완료' : status === 'running' ? '진행 중' : '대기'}</span>
+      </li>
+    })}</ol>
+  </div>
+}
+
+export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }: ArticlePageProps) {
+  const [detail, setDetail] = useState<FeedDetail>()
+  const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
+  const [body, setBody] = useState<{ paragraphs: string[]; failed?: boolean }>()
+  const [reason, setReason] = useState<{ text: string; failed?: boolean }>()
+  const [converted, setConverted] = useState<NewsArticle | null>(null)
+  const [conversion, setConversion] = useState<Conversion>({ state: 'idle' })
+  const [feedback, setFeedbackState] = useState<'good' | 'bad' | null>(null)
+  const [feedbackError, setFeedbackError] = useState('')
+  const [bookmarked, setBookmarked] = useState(false)
+  const conversionRef = useRef<AbortController | null>(null)
+  const scrollRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    function trackSelection() {
-      const selected = window.getSelection()
-      const body = bodyRef.current
-      if (!selected || selected.isCollapsed || !body?.contains(selected.anchorNode) || !body.contains(selected.focusNode)) {
-        setSelection(null)
-        return
-      }
-      const end = selected.getRangeAt(0).endContainer
-      const paragraph = (end instanceof Element ? end : end.parentElement)?.closest<HTMLElement>('[data-paragraph-index]')
-      const text = selected.toString().trim().slice(0, 5000)
-      setSelection(text && paragraph ? { text, index: Number(paragraph.dataset.paragraphIndex) } : null)
-    }
-    document.addEventListener('selectionchange', trackSelection)
-    return () => document.removeEventListener('selectionchange', trackSelection)
-  }, [])
+    const controller = new AbortController()
+    getFeedDetail(id, controller.signal).then(value => {
+      if (controller.signal.aborted) return
+      setDetail(value); setConverted(value.converted); setFeedbackState(value.feedback); setBookmarked(value.bookmarked)
+      if (value.reason) setReason({ text: value.reason })
+      if (value.converted?.originalParagraphs.length) setBody({ paragraphs: value.converted.originalParagraphs })
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause.message) })
+    return () => controller.abort()
+  }, [id, version])
 
-  return (
-    <>
-      <PageLayout title="기사 읽기" onBack={onBack} hero scrollMode="page">
-        <div role="img" aria-label="기사 이미지 자리" className="h-[220px] overflow-hidden bg-surface">{article.imageUrl && <img src={article.imageUrl} alt="" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true }} className="size-full object-cover" />}</div>
-        <div className="px-5 pt-6 pb-6">
-          <h1 className="text-2xl leading-8 font-bold break-keep">{tab === 'original' ? article.title : article.easyTitle || article.title}</h1>
-          <p className="mt-2 text-xs leading-[18px] text-[#8b95a1]">{article.publisher} · {formatDate(article.publishedAt)}</p>
-          <div role="tablist" aria-label="기사 보기 방식" className="mt-6 flex border-b border-line">
-            {views.map(({ value, label }) => (
-              <button key={value} type="button" role="tab" id={`article-tab-${value}`}
-                aria-selected={tab === value} aria-controls="article-content" onClick={() => selectView(value)}
-                className={`min-h-12 flex-1 cursor-pointer border-b-2 px-1 py-3 text-sm leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 ${tab === value ? 'border-brand font-bold text-brand' : 'border-transparent text-muted'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div role="tabpanel" id="article-content" aria-labelledby={`article-tab-${tab}`} tabIndex={0} className="outline-offset-4">
-            {tab === 'compare' ? (
-              <section aria-labelledby="related-heading" className="mt-6">
-                <h2 id="related-heading" className="text-lg leading-[26px] font-bold">다른 언론사는 어떻게 보도했을까?</h2>
-                {article.comparisonStatus === 'pending' ? (
-                  <div className="mt-4">
-                    {comparisonError ? <div role="alert" className="text-sm text-muted">
-                      {comparisonError}
-                      <Button variant="secondary" className="mt-3" onClick={retryComparison}>다시 시도</Button>
-                    </div> : <NewsSkeleton comparison />}
-                  </div>
-                ) : article.reports.length ? (
-                  <RelatedReportsCarousel reports={article.reports} onRelated={onRelated} />
-                ) : (
-                  <p className="mt-3 text-sm leading-[21px] text-muted">{article.comparisonNotice || '이 기사와 비교할 다른 보도를 찾지 못했어요.'}</p>
-                )}
-              </section>
-            ) : (
-              <>
-                {easy && !article.easyParagraphs.length && <div className="mt-6"><p className="text-sm text-muted">쉬운말로 변환하면 본문과 핵심 요약을 볼 수 있어요.</p><Button className="mt-4" onClick={onConvert}>쉬운말로 변환하기</Button></div>}
-                <div className="mt-6 flex flex-wrap items-center gap-2"><span className={`rounded px-2 text-xs leading-6 font-medium ${easy ? 'bg-brand-soft text-brand' : 'border border-line'}`}>{easy ? 'AI가 쉽게 바꾼 글' : '원문'}</span><span className="text-xs leading-[18px] text-muted">{easy ? '어려운 표현을 쉬운 말로 바꿨어요' : '언론사가 쓴 기사 그대로예요'}</span></div>
-                {easy && <div className="mt-6 flex gap-2"><button type="button" onClick={() => summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full border border-[#d1d8e0] px-3 text-[13px] leading-5 font-medium text-secondary focus-visible:outline-2">핵심 요약<Icon name="chevron-down" /></button></div>}
-                <div ref={bodyRef} className="mt-6 flex flex-col gap-4">
-                  {paragraphs.map((paragraph, index) => (
-                    <div key={`${tab}-${index}`} className="relative">
-                      {selection?.index === index && <div onMouseDown={event => event.preventDefault()} className="absolute right-0 -top-12 z-10 flex h-10 items-center rounded-lg bg-[#2b3340] text-[13px] leading-5 font-medium text-white shadow-md"><button type="button" onClick={() => { void navigator.clipboard.writeText(selection.text).then(() => setCopyStatus('문장을 복사했어요.')).catch(() => setCopyStatus('문장을 복사하지 못했어요. 다시 시도해 주세요.')); window.getSelection()?.removeAllRanges(); setSelection(null) }} className="h-10 cursor-pointer px-[14px] focus-visible:outline-2">복사</button><span aria-hidden="true" className="h-5 border-l border-[#8b95a1]" /><button type="button" onClick={() => { setQuestionSentence(selection.text); window.getSelection()?.removeAllRanges(); setSelection(null) }} className="flex h-10 cursor-pointer items-center gap-[6px] px-[14px] focus-visible:outline-2"><Icon name="sparkles-light" />AI에게 물어보기</button></div>}
-                      <p
-                        data-paragraph-index={index}
-                        tabIndex={0}
-                        aria-keyshortcuts="Enter"
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            setQuestionSentence(paragraph)
-                          }
-                        }}
-                        className={`select-text break-keep text-pretty [overflow-wrap:anywhere] outline-offset-4 selection:bg-[#d6e6ff] ${easy ? 'text-[17px] leading-7' : 'text-base leading-7'}`}
-                      >{paragraph}</p>
-                    </div>
-                  ))}
-                </div>
-                {easy && article.summary.length > 0 && <section ref={summaryRef} aria-labelledby="summary-heading" className="mt-6 scroll-mt-5 rounded-2xl bg-[#eaf0f7] p-4"><h2 id="summary-heading" className="text-base leading-6 font-bold">핵심 요약</h2><ul className="mt-2 list-disc space-y-2 pl-4 text-sm leading-[21px]">{article.summary.map((item) => <li key={item}>{item}</li>)}</ul></section>}
-                {easy && Boolean(article.sourcePositions?.length) && <section aria-labelledby="source-positions-heading" className="mt-6">
-                  <h2 id="source-positions-heading" className="text-lg font-bold">이 기사에 나온 입장</h2>
-                  <ul className="mt-3 space-y-3">{article.sourcePositions?.map(position =>
-                    <li key={position.evidence} className="rounded-xl border border-line p-4">
-                      <h3 className="text-sm font-bold">{position.speaker}</h3>
-                      <blockquote className="mt-2 border-l-2 border-brand pl-3 text-sm leading-6">{position.evidence}</blockquote>
-                    </li>)}</ul>
-                  <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs text-muted underline">{article.publisher} 원문 보기</a>
-                </section>}
-              </>
-            )}
-          </div>
+  const sourceUrl = detail?.sourceUrl
+  const needsBody = Boolean(detail && !detail.converted?.originalParagraphs.length)
+  useEffect(() => {
+    if (!sourceUrl || !needsBody) return
+    const controller = new AbortController()
+    getArticlePreview(sourceUrl, controller.signal).then(value => { if (!controller.signal.aborted) setBody({ paragraphs: value.originalParagraphs }) })
+      .catch(() => { if (!controller.signal.aborted) setBody({ paragraphs: [], failed: true }) })
+    return () => controller.abort()
+  }, [sourceUrl, needsBody])
+
+  const needsReason = Boolean(detail && !detail.reason)
+  useEffect(() => {
+    if (!needsReason) return
+    const controller = new AbortController()
+    getReason(id, controller.signal).then(value => { if (!controller.signal.aborted) setReason({ text: value.reason }) })
+      .catch(() => { if (!controller.signal.aborted) setReason({ text: '', failed: true }) })
+    return () => controller.abort()
+  }, [id, needsReason])
+
+  useEffect(() => () => conversionRef.current?.abort(), [])
+
+  const startConversion = useCallback(() => {
+    if (!sourceUrl || conversionRef.current) return
+    const controller = new AbortController()
+    conversionRef.current = controller
+    setConversion({ state: 'running', step: 1 })
+    convertArticle(sourceUrl, step => setConversion({ state: 'running', step }), controller.signal)
+      .then(article => { setConverted(article); setConversion({ state: 'idle' }) })
+      .catch(cause => {
+        if (controller.signal.aborted) return
+        if ((cause as { code?: string }).code === 'QUOTA_EXCEEDED') onQuotaExceeded()
+        setConversion({ state: 'failed', message: cause.message })
+      })
+      .finally(() => { if (conversionRef.current === controller) conversionRef.current = null })
+  }, [sourceUrl, onQuotaExceeded])
+
+  // Opening the easy tab is the request to convert.
+  const easy = tab === 'easy'
+  useEffect(() => {
+    if (easy && detail && !converted && conversion.state === 'idle') startConversion()
+  }, [easy, detail, converted, conversion.state, startConversion])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }) }, [tab])
+
+  if (!detail) return <Screen pageTitle="기사" onBack={onBack}><RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /></Screen>
+
+  const nick = detail.nickname ? `${detail.nickname}님` : '나'
+  const nickTo = detail.nickname ? `${detail.nickname}님께` : '나에게'
+  const showTabs = detail.difficult || Boolean(converted)
+  const ask = (text: string) => onChat(text)
+  const answerFeedback = async (value: 'good' | 'bad') => {
+    setFeedbackError('')
+    try { await sendFeedback(detail.id, value); setFeedbackState(value) } catch (cause) { setFeedbackError((cause as Error).message) }
+  }
+  const toggleBookmark = async () => {
+    const next = !bookmarked
+    setBookmarked(next)
+    try { await setBookmark(detail.id, next) } catch { setBookmarked(!next) }
+  }
+
+  const originalBody = <section aria-label="기사 원문" className="pt-5">
+    {!showTabs && <h2 className="mb-3 text-base font-bold">원문</h2>}
+    {!body ? <p className="text-sm text-muted" role="status">원문을 불러오고 있어요.</p>
+      : body.failed || !body.paragraphs.length ? <div className="text-sm leading-6 text-secondary"><p>{detail.excerpt}</p>
+        <a href={detail.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-[13px] text-brand underline">언론사 원문 열기</a></div>
+        : <AskableBody onAsk={ask}>{readableArticleParagraphs(body.paragraphs).map((paragraph, index) => <p key={index} className="text-[15px] leading-[26px] break-keep text-pretty [overflow-wrap:anywhere]">{paragraph}</p>)}</AskableBody>}
+    {detail.difficult && <PillButton className="mt-6 w-full" onClick={() => onTab('easy')}>쉬운말로 바꿔 보기</PillButton>}
+  </section>
+
+  const similarAndFeedback = <>
+    <div aria-hidden="true" className="-mx-5 mt-8 h-2 bg-surface" />
+    {detail.similar.length > 0 && <section aria-labelledby="similar-heading" className="pt-6">
+      <h2 id="similar-heading" className="text-base font-bold">비슷한 기사도 있어요</h2>
+      <ul className="mt-2 divide-y divide-line">{detail.similar.map(item => <li key={item.id}>
+        <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 py-4 focus-visible:outline-2 focus-visible:outline-brand">
+          <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold break-keep">{item.title}</p>
+            {item.excerpt && <p className="mt-1 line-clamp-1 text-xs text-secondary">{item.excerpt}</p>}
+            <p className="mt-1 text-xs text-muted">{item.publisher} · {relativeTime(item.publishedAt)}</p></div>
+          <LineIcon name="next" size={20} className="text-muted" />
+        </a></li>)}</ul>
+    </section>}
+    <section aria-labelledby="feedback-heading" className="mt-4 mb-24 rounded-xl bg-surface p-4">
+      <h2 id="feedback-heading" className="text-[15px] font-bold">이 추천, {nick}과 맞았나요?</h2>
+      {feedback ? <div role="status" className="mt-3"><p className="flex items-center gap-1 text-sm font-bold"><LineIcon name="check" size={18} />반영할게요</p>
+        <p className="mt-1 text-[13px] leading-5 text-secondary">다음 매칭부터 {nickTo} 더 잘 맞는 기사를 찾아 드릴게요.</p></div>
+        : <><div className="mt-3 flex gap-2"><PillButton variant="outline" className="h-10 flex-1 text-sm font-medium" onClick={() => answerFeedback('good')}>잘 맞아요</PillButton>
+          <PillButton variant="secondary" className="h-10 flex-1 bg-line text-sm font-medium" onClick={() => answerFeedback('bad')}>관련 없어요</PillButton></div>
+          <p className="mt-3 text-xs text-muted">답하면 다음 매칭에 반영돼요</p>
+          {feedbackError && <p role="alert" className="mt-2 text-xs text-red-600">{feedbackError}</p>}</>}
+    </section>
+  </>
+
+  if (easy) {
+    return <Screen pageTitle="쉬운말 보기" onBack={onBack} scrollRef={scrollRef} contentClassName="px-5" overlay={<ChatFab onClick={() => onChat()} />}>
+      <div className="flex items-center gap-2 pt-1 text-xs text-muted"><MatchBadge score={detail.match.score} /><span>{detail.publisher} · {formatDot(detail.publishedAt)}</span></div>
+      <h1 className="mt-2 text-xl leading-7 font-bold break-keep">{detail.title}</h1>
+      <div className="sticky top-0 z-10 -mx-5 mt-4 px-5"><Tabs tab={tab} onTab={onTab} /></div>
+      {conversion.state === 'running' ? <Converting step={conversion.step} />
+        : conversion.state === 'failed' ? <div className="mt-4">
+          <div role="alert" className="rounded-xl border-2 border-ink p-4"><p className="flex items-center gap-2 text-sm font-bold"><LineIcon name="info" size={20} />쉬운말로 바꾸지 못했어요</p>
+            <p className="mt-1 pl-7 text-[13px] leading-5 text-secondary">{conversion.message && !conversion.message.includes('잠시 후') ? `${conversion.message} ` : ''}잠시 후 다시 시도해 주세요. 원문은 원문 보기 탭에서 그대로 볼 수 있어요.</p></div>
+          <PillButton className="mt-4 w-full" onClick={() => { setConversion({ state: 'idle' }); startConversion() }}>다시 시도</PillButton>
+          <button type="button" onClick={() => onTab('original')} className="mt-2 h-10 w-full cursor-pointer text-[13px] font-medium text-secondary">원문 보기로 돌아가기</button>
         </div>
-        <div className="px-5 pb-6">
-          <div className="mt-3 flex gap-4 text-xs leading-[18px] text-muted"><button type="button" className="cursor-pointer underline" onClick={() => { void navigator.clipboard.writeText(article.sourceUrl).then(() => setCopyStatus('기사 주소를 복사했어요.')).catch(() => setCopyStatus('복사하지 못했어요. 원문 링크를 이용해 주세요.')) }}>기사 URL 복사</button><a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">언론사 원문 열기</a></div>{copyStatus && <p role="status" className="mt-2 text-xs text-muted">{copyStatus}</p>}
-        </div>
-      </PageLayout>
-      {questionSentence && <ArticleQuestionSheet key={questionSentence} sentence={questionSentence} articleId={article.id} sourceUrl={article.sourceUrl} onClose={() => { setQuestionSentence(''); setSelection(null) }} />}
-    </>
-  )
+          : converted ? <article className="pb-24">
+            <div className="mt-4 flex flex-wrap items-center gap-2"><span className="inline-flex h-6 items-center rounded-full bg-brand px-2 text-xs font-bold text-white">AI가 쉽게 바꾼 글</span>
+              {Boolean(converted.changedCount) && <span className="text-xs text-muted">어려운 표현 {converted.changedCount}개를 바꿨어요</span>}</div>
+            {converted.background && <section aria-labelledby="background-heading" className="mt-4 rounded-xl border border-line p-4">
+              <h2 id="background-heading" className="flex items-center gap-1 text-[13px] font-bold"><LineIcon name="info" size={16} />읽기 전에 알아 두면 좋아요</h2>
+              <p className="mt-2 text-[13px] leading-5 text-secondary">{converted.background}</p></section>}
+            <p className="mt-4 text-xs leading-[18px] text-muted">본문을 드래그하면 그 부분을 소식이에게 바로 물어볼 수 있어요.</p>
+            <div className="mt-4"><AskableBody onAsk={ask}>{converted.easyParagraphs.map((paragraph, index) => <p key={index} className="text-[17px] leading-7 break-keep"><Emphasis text={paragraph} /></p>)}</AskableBody></div>
+            {converted.summary.length > 0 && <section aria-labelledby="summary-heading" className="mt-8 rounded-xl bg-surface p-4">
+              <h2 id="summary-heading" className="text-sm font-bold">핵심 요약</h2>
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-[13px] leading-5 text-secondary">{converted.summary.map(item => <li key={item}>{item}</li>)}</ul></section>}
+            {Boolean(converted.glossary?.length) && <section aria-labelledby="glossary-heading" className="mt-8">
+              <h2 id="glossary-heading" className="text-base font-bold">낱말 풀이</h2>
+              <dl className="mt-3 space-y-2">{converted.glossary?.map(entry => <div key={entry.term} className="rounded-xl border border-line p-4">
+                <dt className="text-sm font-bold">{entry.term}</dt><dd className="mt-1 text-[13px] leading-5 text-secondary">{entry.meaning}</dd></div>)}</dl></section>}
+            <p className="mt-6 flex gap-1 text-xs leading-[18px] text-muted"><LineIcon name="info" size={14} className="mt-0.5" />금액·날짜처럼 정확해야 하는 내용은 원문 보기에서 꼭 확인해 주세요.</p>
+          </article> : <RequestState loading />}
+    </Screen>
+  }
+
+  return <Screen pageTitle="기사 상세" onBack={onBack} scrollRef={scrollRef} contentClassName="px-5" overlay={<ChatFab onClick={() => onChat()} />}
+    right={<IconButton label={bookmarked ? '저장 취소' : '기사 저장'} pressed={bookmarked} onClick={toggleBookmark} className="-mr-2"><LineIcon name="bookmark" filled={bookmarked} /></IconButton>}>
+    <div className="mt-2 flex h-[175px] items-center justify-center overflow-hidden rounded-xl bg-surface text-muted">
+      {detail.imageUrl ? <img src={detail.imageUrl} alt="" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true }} className="size-full object-cover" /> : <LineIcon name="image" size={32} />}
+    </div>
+    <div className="mt-4 flex flex-wrap gap-1">{detail.topics.map(topic => <TopicLabel key={topic}>{topicLabel(topic)}</TopicLabel>)}</div>
+    <h1 className="mt-2 text-xl leading-7 font-bold break-keep">{detail.title}</h1>
+    <p className="mt-2 text-xs text-muted">{detail.publisher} · {formatDot(detail.publishedAt)}</p>
+    <section aria-label="매칭 분석" className="mt-4 rounded-xl border border-line p-4">
+      <div className="flex items-center gap-4"><p className="text-[32px] leading-10 font-bold text-brand">{detail.match.score}%</p>
+        <div><p className="text-[13px] text-muted">{nick}과의 매칭률</p><p className="text-base font-bold">{detail.match.grade}</p></div></div>
+      <div className="mt-4 space-y-3">
+        <ScoreBar label="관심 분야" value={detail.match.interest} max={50} />
+        <ScoreBar label="내 정보(나이·직종)" value={detail.match.personal} max={30} />
+        <ScoreBar label="시의성" value={detail.match.timeliness} max={20} />
+      </div>
+      <div className="mt-4 rounded-lg border border-line p-4">
+        <h2 className="text-sm font-bold">{nickTo} 필요한 이유</h2>
+        <p className="mt-2 text-[13px] leading-5 text-secondary" aria-live="polite">{reason ? reason.text || detail.why || '이 기사가 왜 필요한지 정리하지 못했어요.' : '필요한 이유를 정리하고 있어요.'}</p>
+        {detail.match.matchedTags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{detail.match.matchedTags.map(tag => <span key={tag} className="rounded-full border border-line px-2 text-xs leading-6 text-secondary">{tag}</span>)}</div>}
+      </div>
+    </section>
+    {showTabs && <div className="sticky top-0 z-10 -mx-5 mt-6 px-5"><Tabs tab={tab} onTab={onTab} /></div>}
+    {originalBody}
+    {similarAndFeedback}
+  </Screen>
 }

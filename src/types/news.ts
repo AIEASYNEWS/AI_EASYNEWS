@@ -2,22 +2,6 @@ import type { TopicId } from './onboarding'
 
 export type ViewerMode = 'guest' | 'member' | 'subscriber'
 
-export interface RelatedReport {
-  id: string
-  publisher: string
-  title: string
-  focus: string
-  summary?: string[]
-  kind: 'same-event' | 'different-perspective'
-  relation?: 'opposing' | 'alternative'
-  koreanTitle?: string
-  viewpoint?: string
-  originalEvidence?: string
-  relatedEvidence?: string
-  sourceUrl?: string
-  publishedAt?: string
-}
-
 export interface NewsItem {
   id: string
   topicId: TopicId
@@ -36,11 +20,49 @@ export interface NewsArticle extends NewsItem {
   easyParagraphs: string[]
   originalParagraphs: string[]
   summary: string[]
-  comparison: string
-  reports: RelatedReport[]
-  originalFocus?: string
-  sourcePositions?: { speaker: string; evidence: string }[]
-  comparisonStatus?: 'pending' | 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'evidence-unverified' | 'analysis-failed' | 'timeout'
-  comparisonPlan?: { revision: string }
-  comparisonNotice?: string
+  background?: string
+  glossary?: { term: string; meaning: string }[]
+  changedCount?: number
 }
+
+export interface MatchResult {
+  score: number
+  grade: string
+  interest: number
+  personal: number
+  timeliness: number
+  matchedTags: string[]
+}
+
+export interface FeedItem extends NewsItem {
+  topics: TopicId[]
+  why: string
+  difficult: boolean
+  match: MatchResult
+}
+
+export interface FeedResponse {
+  total: number
+  matched: number
+  items: FeedItem[]
+  nickname: string
+  summary: string[]
+  hasInterests: boolean
+  profileComplete: boolean
+  waitingForCollection: boolean
+}
+
+export interface SimilarArticle { id: string; title: string; publisher: string; publishedAt: string; sourceUrl: string; excerpt: string }
+
+export interface FeedDetail extends FeedItem {
+  nickname: string
+  reason: string | null
+  similar: SimilarArticle[]
+  feedback: 'good' | 'bad' | null
+  bookmarked: boolean
+  converted: NewsArticle | null
+}
+
+export interface ChatMessage { id: string; role: 'user' | 'assistant'; text: string; quote?: string; offTopic?: boolean; createdAt: number }
+export interface ChatArticle { id: string; title: string; publisher: string; publishedAt: string; topicId: TopicId; sourceUrl: string }
+export interface ChatRoom { article: ChatArticle; createdAt: number; updatedAt: number; lastMessage?: { role: 'user' | 'assistant'; text: string } }
