@@ -31,16 +31,21 @@ export async function fetchArticleImage(sourceUrl, signal) {
  * Bounded by count, concurrency and a deadline; `imageCheckedAt` prevents retrying pages without one.
  */
 export async function enrichImages(db, records, { limit = 60, concurrency = 6, deadline = Infinity, fetchImage = fetchArticleImage } = {}) {
-  const pending = records.filter(record => record.newsKey && !record.imageUrl && !record.imageCheckedAt).slice(0, limit)
+  const now = Date.now()
+  // `imageCheckedAt`: the page had no image (final). `imageFailedAt`: the page could not be read (retry after 6 hours).
+  const pending = records.filter(record => record.newsKey && !record.imageUrl && !record.imageCheckedAt && !(record.imageFailedAt > now - 6 * 3600_000)).slice(0, limit)
   let found = 0
   let next = 0
   async function worker() {
     while (next < pending.length && Date.now() < deadline) {
       const record = pending[next++]
-      const imageUrl = await fetchImage(record.sourceUrl, AbortSignal.timeout(6000)).catch(() => null)
-      const update = { imageCheckedAt: Date.now(), ...(imageUrl ? { imageUrl } : {}) }
+      let update
+      try {
+        const imageUrl = await fetchImage(record.sourceUrl, AbortSignal.timeout(6000))
+        update = imageUrl ? { imageUrl } : { imageCheckedAt: Date.now() }
+      } catch { update = { imageFailedAt: Date.now() } }
       Object.assign(record, update)
-      if (imageUrl) found++
+      if (update.imageUrl) found++
       await db.collection('newsArticles').doc(record.newsKey).set(update, { merge: true }).catch(() => {})
     }
   }

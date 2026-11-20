@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { getFeed } from '../apis/feed'
+import { getFeed, getImage } from '../apis/feed'
 import { getNotifications } from '../apis/account'
 import { saveProfile } from '../apis/profile'
 import { BottomNavigation } from '../components/layout/BottomNavigation'
@@ -27,9 +27,22 @@ export function EasyBadge() {
 }
 
 /** Article image with a skeleton while it loads and a placeholder icon when there is none. */
-export function Thumb({ src, className = '', iconSize = 24 }: { src?: string; className?: string; iconSize?: number }) {
+export function Thumb({ src: given, newsId, className = '', iconSize = 24 }: { src?: string; newsId?: string; className?: string; iconSize?: number }) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading')
+  // Stories collected without an image: look up the original page's image once (skeleton meanwhile).
+  const [found, setFound] = useState<{ id: string; url: string | null }>()
+  const lookup = !given && newsId ? newsId : undefined
+  useEffect(() => {
+    if (!lookup) return
+    const controller = new AbortController()
+    getImage(lookup, controller.signal).then(value => setFound({ id: lookup, url: value.imageUrl }))
+      .catch(() => { if (!controller.signal.aborted) setFound({ id: lookup, url: null }) })
+    return () => controller.abort()
+  }, [lookup])
+  const searching = Boolean(lookup && found?.id !== lookup)
+  const src = given || (found?.id === lookup ? found?.url ?? undefined : undefined)
   const show = src && state !== 'failed'
+  if (searching) return <Skeleton className={`rounded-none ${className}`} />
   return <div aria-hidden="true" className={`relative flex items-center justify-center overflow-hidden bg-[#eaf0f7] text-subtle ${className}`}>
     {show && state === 'loading' && <Skeleton className="absolute inset-0 rounded-none" />}
     {show ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onLoad={() => setState('loaded')} onError={() => setState('failed')}
@@ -154,7 +167,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
       <div className="flex items-center justify-between"><h2 id="top-heading" className="text-lg leading-[26px] font-bold">나를 위한 추천 기사</h2><span className="text-sm font-medium text-muted">매칭률 높은 순</span></div>
       <p className="text-xs leading-[18px] text-subtle">오늘 들어온 기사 {feed.total.toLocaleString()}건 중 {feed.matched}건이 잘 맞아요</p>
       <button type="button" onClick={() => onArticle(top.id)} className="mt-2 block w-full cursor-pointer overflow-hidden rounded-xl border border-border bg-white text-left focus-visible:outline-2 focus-visible:outline-brand">
-        <Thumb src={top.imageUrl} className="h-[197px] w-full" />
+        <Thumb src={top.imageUrl} newsId={top.id} className="h-[197px] w-full" />
         <div className="flex flex-col gap-2 p-4">
           <div className="flex flex-wrap items-center gap-2">{top.match.labels.map(label => <TopicLabel key={label}>{label}</TopicLabel>)}<MatchBadge score={top.match.score} /></div>
           <h3 className="line-clamp-2 text-base leading-6 font-bold break-keep">{top.title}</h3>
@@ -175,7 +188,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
             <h3 className="line-clamp-2 text-base leading-6 font-bold break-keep">{item.title}</h3>
             <Meta item={item} />
           </div>
-          <Thumb src={item.imageUrl} className="size-20 shrink-0" />
+          <Thumb src={item.imageUrl} newsId={item.id} className="size-20 shrink-0" />
         </button>
       </li>)}</ul>
     </section>}

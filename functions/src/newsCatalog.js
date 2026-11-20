@@ -72,7 +72,7 @@ export async function storeNewsCandidates(db, items, observedAt) {
           // AI matching tags describe the same story; keep them while the headline is unchanged.
           ...(previous?.tags && previous.title === item.title ? { tags: previous.tags } : {}),
           // Enriched later (og:image, similar stories, region hint); search results do not carry them.
-          ...Object.fromEntries(['imageUrl', 'imageCheckedAt', 'regionHint', 'similar', 'similarAt'].filter(key => previous?.[key] !== undefined && item[key] === undefined).map(key => [key, previous[key]])) }
+          ...Object.fromEntries(['imageUrl', 'imageCheckedAt', 'imageFailedAt', 'regionHint', 'similar', 'similarAt'].filter(key => previous?.[key] !== undefined && item[key] === undefined).map(key => [key, previous[key]])) }
         tx.set(snapshot.ref, record)
         return record
       })

@@ -10,7 +10,7 @@ import { readArticle, articleId } from './articles.js'
 import { parsePublicUrl } from './safeFetch.js'
 import { isRegion } from './regions.js'
 import { findSimilar } from './similar.js'
-import { enrichImages } from './images.js'
+import { enrichImages, fetchArticleImage } from './images.js'
 import { collectNews, getExploreNews } from './news.js'
 import { aiConfigured, assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
 import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
@@ -43,7 +43,7 @@ const rate = new Map()
 
 const roomArticle = item => ({ id: item.newsKey, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt || '', topicId: item.tags?.topics?.[0] || item.topicId, sourceUrl: item.sourceUrl })
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, expand = expandKeyword, similar = findSimilar, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, expand = expandKeyword, similar = findSimilar, imageReader = fetchArticleImage, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
   const expanding = new Map()
   /** Creates missing keyword meaning expansions once per keyword; failures leave plain text matching. */
@@ -211,13 +211,19 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     const uid = request.user.uid
     const [profile, state, converted] = await Promise.all([readerProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl))])
     // Backfill the representative image so the home cards show it next time.
-    if (!item.imageUrl && !item.imageCheckedAt) void enrichImages(adminServices().db, [item], { limit: 1 }).catch(() => {})
+    if (!item.imageUrl) void enrichImages(adminServices().db, [item], { limit: 1, fetchImage: imageReader }).catch(() => {})
     const profileKey = JSON.stringify(profileSummary(profile))
     response.json({
       ...feedItem(item, scoreMatch(profile, item)), nickname: profile.nickname || '',
       reason: await getCachedReason(uid, item.newsKey, profileKey), region: profile.region || null,
       ...state, converted: converted?.easyParagraphs?.length ? converted : null,
     })
+  })
+  // Home cards ask for a missing image; the og:image is read once and stored for every reader.
+  router.get('/feed/:id/image', async (request, response) => {
+    const item = await loadItem(request.params.id)
+    if (!item.imageUrl) await enrichImages(adminServices().db, [item], { limit: 1, fetchImage: imageReader })
+    response.json({ imageUrl: item.imageUrl || null })
   })
   router.get('/feed/:id/similar', async (request, response) => {
     const item = await loadItem(request.params.id)

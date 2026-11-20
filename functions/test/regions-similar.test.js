@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { REGIONS, isRegion, normalizeRegion, regionQuery } from '../src/regions.js'
 import { pickSimilar, similarQuery } from '../src/similar.js'
-import { extractImage } from '../src/images.js'
+import { enrichImages, extractImage } from '../src/images.js'
 
 test('the region list covers every 시·도 and validates 시·군·구', () => {
   assert.equal(REGIONS.length, 17)
@@ -43,4 +43,18 @@ test('representative images come from og/twitter meta tags and must be public ht
   assert.equal(extractImage('<meta content="/img/b.png" name="twitter:image">', 'https://news.example/1'), 'https://news.example/img/b.png')
   assert.equal(extractImage('<meta property="og:image" content="http://127.0.0.1/x.png">', 'https://news.example/1'), null)
   assert.equal(extractImage('<title>no image</title>', 'https://news.example/1'), null)
+})
+
+test('image lookups store found images, remember pages without one, and retry unreadable pages later', async () => {
+  const writes = []
+  const db = { collection: () => ({ doc: id => ({ set: async value => writes.push([id, Object.keys(value)[0]]) }) }) }
+  const records = [
+    { newsKey: 'a', sourceUrl: 'https://a.example/1' },
+    { newsKey: 'b', sourceUrl: 'https://b.example/1' },
+    { newsKey: 'c', sourceUrl: 'https://c.example/1' },
+    { newsKey: 'd', sourceUrl: 'https://d.example/1', imageFailedAt: Date.now() },
+  ]
+  const fetchImage = async url => { if (url.includes('c.example')) throw new Error('timeout'); return url.includes('a.example') ? 'https://cdn.example/a.jpg' : null }
+  assert.equal(await enrichImages(db, records, { fetchImage }), 1)
+  assert.deepEqual(writes.sort(), [['a', 'imageUrl'], ['b', 'imageCheckedAt'], ['c', 'imageFailedAt']])
 })
