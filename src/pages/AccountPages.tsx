@@ -37,7 +37,7 @@ function AccountStep({ draft, onChange, onNext, onLogin }: { draft: AccountDraft
   return <Screen pageTitle="계정 만들기" heading="계정 만들기" contentClassName="px-5 pb-8"
     footer={<div className="px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]"><PillButton className="w-full" disabled={!ready} onClick={onNext}>다음</PillButton>
       <button type="button" onClick={onLogin} className="mt-2 h-10 w-full cursor-pointer text-[13px] font-medium text-secondary">이미 계정이 있어요</button></div>}>
-    <img src="/images/onboarding/aleum-blue.svg" alt="aleum" width="72" height="24" className="mt-2 h-6 w-auto" />
+    <img src="/images/tori/nutori-logo-blue.png" alt="NUTORI" width="88" height="19" className="mt-2 h-[19px] w-auto" />
     <h1 className="mt-2 text-[22px] leading-[30px] font-bold">나에게 맞는 뉴스를 찾으려면<br />계정이 필요해요</h1>
     <p className="mt-2 text-[13px] text-muted">아이디와 비밀번호만 정하면 바로 시작할 수 있어요.</p>
     <form className="mt-7" onSubmit={check}>

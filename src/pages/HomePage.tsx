@@ -70,12 +70,12 @@ export function FeedCard({ item, onOpen }: { item: FeedItem; onOpen: () => void 
   </li>
 }
 
-function EmptyState({ icon, title, body, action }: { icon: LineIconName; title: string; body: string; action: ReactNode }) {
-  return <div className="flex flex-col items-center px-4 pt-14 pb-24 text-center">
-    <span className="flex size-14 items-center justify-center rounded-full bg-surface text-secondary"><LineIcon name={icon} /></span>
-    <p className="mt-4 text-[15px] font-bold">{title}</p>
-    <p className="mt-2 text-[13px] leading-5 whitespace-pre-line text-muted">{body}</p>
-    <div className="mt-5">{action}</div>
+function EmptyState({ icon, image, title, body, action }: { icon?: LineIconName; image?: ReactNode; title: string; body: string; action: ReactNode }) {
+  return <div className="flex flex-col items-center gap-4 px-4 pt-14 pb-24 text-center">
+    {image ?? (icon && <span className="flex size-14 items-center justify-center rounded-full bg-surface text-secondary"><LineIcon name={icon} /></span>)}
+    <div><p className="text-base leading-6 font-bold">{title}</p>
+      <p className="mt-2 text-sm leading-[21px] whitespace-pre-line text-muted">{body}</p></div>
+    <div>{action}</div>
   </div>
 }
 
@@ -160,8 +160,10 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
   else if (!feed) body = <HomeSkeleton />
   else if (!keywords.length) body = <EmptyState icon="tag" title="관심 분야를 고르면 맞춤 뉴스를 찾아 드려요" body="관심 있는 분야를 하나 이상 골라 주세요."
     action={<PillButton className="h-11 px-6 text-sm" onClick={() => setSheet('keywords')}>분야 고르기</PillButton>} />
-  else if (!top) body = <EmptyState icon="doc" title="오늘은 잘 맞는 기사가 없어요" body={feed.waitingForCollection ? '아직 들어온 기사가 없어요.\n기사가 들어오면 다시 찾아 드릴게요.' : '새 기사가 들어오면 다시 찾아 드릴게요.\n매칭 키워드를 넓혀 보는 것도 좋아요.'}
-    action={<PillButton variant="outline" className="h-10 px-5 text-[13px]" onClick={() => setSheet('keywords')}>매칭 키워드 편집</PillButton>} />
+  else if (!top) body = <EmptyState title="오늘은 잘 맞는 기사가 없어요"
+    image={<img src="/images/tori/tori-search.png" alt="" aria-hidden="true" width="126" height="115" className="h-[115px] w-[126px]" />}
+    body={feed.waitingForCollection ? '아직 들어온 기사가 없어요.\n기사가 들어오면 다시 찾아 드릴게요.' : '새 기사가 들어오면 다시 찾아 드릴게요.\n키워드를 넓혀 보는 것도 좋아요.'}
+    action={<PillButton variant="outline" className="h-12 px-6 text-sm font-medium" onClick={() => setSheet('keywords')}>키워드 편집</PillButton>} />
   else body = <>
     <section aria-labelledby="top-heading" className="mt-[26px]">
       <div className="flex items-center justify-between"><h2 id="top-heading" className="text-lg leading-[26px] font-bold">나를 위한 추천 기사</h2><span className="text-sm font-medium text-muted">매칭률 높은 순</span></div>
@@ -198,7 +200,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
   const initialDraft: ProfileDraft = { ...emptyDraft, topicIds: feed?.topicIds ?? [], customKeywords: feed?.customKeywords ?? [] }
   return <>
     <Screen pageTitle="홈" contentClassName="px-5 pt-2"
-      overlay={<>{toast && <Toast {...toast} />}<ChatFab aboveNavigation onClick={onChats} label="소식이 대화 기록" /></>}
+      overlay={<>{toast && <Toast {...toast} />}<ChatFab aboveNavigation onClick={onChats} label="토리 대화 기록" /></>}
       footer={<BottomNavigation active="home" onHome={() => document.querySelector('main')?.scrollTo({ top: 0 })} onExplore={onExplore} onMyPage={onMyPage} />}>
       <div className="flex items-start justify-between">
         <div className="min-w-0">

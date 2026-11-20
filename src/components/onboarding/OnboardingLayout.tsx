@@ -14,7 +14,7 @@ export function OnboardingLayout({ children, footer, title, action, pageTitle }:
   const pageRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    document.title = `${pageTitle} | 쉬운말 뉴스`
+    document.title = `${pageTitle} | NUTORI`
     pageRef.current?.focus({ preventScroll: true })
   }, [pageTitle])
 

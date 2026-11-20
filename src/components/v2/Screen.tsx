@@ -18,7 +18,7 @@ export function Screen({ pageTitle, heading, onBack, right, footer, children, co
   const ownRef = useRef<HTMLElement>(null)
   const ref = scrollRef ?? ownRef
   useEffect(() => {
-    document.title = `${pageTitle} | 쉬운말 뉴스`
+    document.title = `${pageTitle} | NUTORI`
     ref.current?.focus({ preventScroll: true })
   }, [pageTitle, ref])
   return (

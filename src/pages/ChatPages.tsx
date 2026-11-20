@@ -16,7 +16,7 @@ function BotBubble({ children, typing }: { children?: ReactNode; typing?: boolea
   return <div className="flex items-start gap-2">
     <Character size={32} />
     <div className="max-w-[260px] rounded-2xl rounded-tl-sm bg-surface px-[14px] py-[10px] text-sm leading-[21px] break-keep whitespace-pre-line">
-      {typing ? <span role="status" aria-label="소식이가 답변을 만들고 있어요" className="flex h-[21px] items-center gap-1">{[0, 1, 2].map(dot => <span key={dot} style={{ animationDelay: `${dot * 150}ms` }} className="size-1.5 animate-bounce rounded-full bg-brand motion-reduce:animate-none" />)}</span> : children}
+      {typing ? <span role="status" aria-label="토리가 답변을 만들고 있어요" className="flex h-[21px] items-center gap-1">{[0, 1, 2].map(dot => <span key={dot} style={{ animationDelay: `${dot * 150}ms` }} className="size-1.5 animate-bounce rounded-full bg-brand motion-reduce:animate-none" />)}</span> : children}
     </div>
   </div>
 }
@@ -41,7 +41,7 @@ function ArticleCard({ article, onOpen }: { article: ChatArticle; onOpen: () => 
 
 type Pending = { text: string; quote?: string; failed?: string }
 
-/** C1 소식이 대화방: one room per article. A dragged quote arrives as the first question. */
+/** C1 토리 대화방: one room per article. A dragged quote arrives as the first question. */
 export function ChatPage({ id, quote, onQuoteUsed, onBack, onHistory, onArticle }: { id: string; quote?: string; onQuoteUsed: () => void; onBack: () => void; onHistory: () => void; onArticle: () => void }) {
   const [data, setData] = useState<{ article: ChatArticle; room: ChatRoom | null; messages: ChatMessage[] }>()
   const [error, setError] = useState('')
@@ -87,18 +87,18 @@ export function ChatPage({ id, quote, onQuoteUsed, onBack, onHistory, onArticle 
     void send({ text })
   }
 
-  const header = <span className="flex items-center gap-2"><Character size={32} /><span>소식이</span></span>
+  const header = <span className="flex items-center gap-2"><Character size={34} /><span className="text-xl leading-[26px] font-bold text-brand">토리</span></span>
   const historyButton = <button type="button" onClick={onHistory} className="-mr-2 flex h-10 cursor-pointer items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-secondary hover:bg-surface focus-visible:outline-2 focus-visible:outline-brand"><LineIcon name="clock" size={18} />기록</button>
-  if (!data) return <Screen pageTitle="소식이" heading={header} onBack={onBack} right={historyButton}><RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /></Screen>
+  if (!data) return <Screen pageTitle="토리" heading={header} onBack={onBack} right={historyButton}><RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /></Screen>
 
   const empty = !data.messages.length && !pending
   const busy = Boolean(pending && !pending.failed)
-  return <Screen pageTitle="소식이" heading={header} onBack={onBack} right={historyButton} contentClassName="px-5"
+  return <Screen pageTitle="토리" heading={header} onBack={onBack} right={historyButton} contentClassName="px-5"
     footer={<div className="pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       <div className="flex gap-2 overflow-x-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{suggestions.map(item =>
         <button key={item} type="button" disabled={busy} onClick={() => void send({ text: item })} className="h-9 shrink-0 cursor-pointer rounded-full border border-slate-300 bg-white px-4 text-[13px] font-medium text-secondary hover:bg-surface disabled:cursor-not-allowed disabled:text-slate-400">{item}</button>)}</div>
       <form onSubmit={submit} className="mt-3 flex gap-2 px-5">
-        <input aria-label="소식이에게 질문하기" maxLength={1000} placeholder="소식이에게 물어보세요" value={input} onChange={event => setInput(event.target.value)}
+        <input aria-label="토리에게 질문하기" maxLength={1000} placeholder="토리에게 물어보세요" value={input} onChange={event => setInput(event.target.value)}
           className="h-11 min-w-0 flex-1 rounded-full border border-slate-300 px-4 text-sm placeholder:text-slate-400 focus:border-brand focus:outline-none" />
         <button type="submit" aria-label="보내기" disabled={!input.trim() || busy} className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-300"><LineIcon name="up" size={20} /></button>
       </form>
@@ -126,7 +126,7 @@ export function ChatPage({ id, quote, onQuoteUsed, onBack, onHistory, onArticle 
   </Screen>
 }
 
-/** C2 소식이 대화 기록: rooms by most recent activity, with deletion. */
+/** C2 토리 대화 기록: rooms by most recent activity, with deletion. */
 export function ChatHistoryPage({ onBack, onOpen }: { onBack: () => void; onOpen: (id: string) => void }) {
   const [rooms, setRooms] = useState<ChatRoom[]>()
   const [error, setError] = useState('')
@@ -154,7 +154,7 @@ export function ChatHistoryPage({ onBack, onOpen }: { onBack: () => void; onOpen
 
   const right = rooms?.length ? <button type="button" onClick={() => setEditing(value => !value)} className="-mr-2 h-10 cursor-pointer rounded-lg px-2 text-[13px] font-medium text-secondary hover:bg-surface">{editing ? '완료' : '편집'}</button> : null
   return <>
-    <Screen pageTitle="소식이 대화 기록" heading="소식이 대화 기록" onBack={onBack} right={right} contentClassName="px-5">
+    <Screen pageTitle="토리 대화 기록" heading="토리 대화 기록" onBack={onBack} right={right} contentClassName="px-5">
       {!rooms ? <RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} />
         : !rooms.length ? <div className="flex h-full flex-col items-center justify-center pb-20 text-center">
           <span className="flex size-14 items-center justify-center rounded-full bg-surface text-secondary"><LineIcon name="chat" /></span>
@@ -165,7 +165,7 @@ export function ChatHistoryPage({ onBack, onOpen }: { onBack: () => void; onOpen
             <button type="button" onClick={() => onOpen(room.article.id)} className="min-w-0 flex-1 cursor-pointer py-4 text-left focus-visible:outline-2 focus-visible:outline-brand">
               <span className="flex items-center justify-between gap-2"><TopicLabel>{topicLabel(room.article.topicId)}</TopicLabel><span className="text-xs text-muted">{formatListTime(room.updatedAt)}</span></span>
               <span className="mt-2 block truncate text-[15px] font-bold">{room.article.title}</span>
-              {room.lastMessage && <span className="mt-1 block truncate text-[13px] text-muted">{room.lastMessage.role === 'assistant' ? '소식이' : '나'}: {room.lastMessage.text}</span>}
+              {room.lastMessage && <span className="mt-1 block truncate text-[13px] text-muted">{room.lastMessage.role === 'assistant' ? '토리' : '나'}: {room.lastMessage.text}</span>}
             </button>
             {editing && <IconButton label={`${room.article.title} 대화 삭제`} onClick={() => { setDeleteError(''); setTarget(room) }} className="text-red-600"><LineIcon name="trash" size={20} /></IconButton>}
           </li>)}</ul>}
