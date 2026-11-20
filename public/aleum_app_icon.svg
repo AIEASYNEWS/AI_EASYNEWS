@@ -1,27 +1,16 @@
-<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<g id="aleum_app_icon">
-<rect width="240" height="240" rx="54" fill="url(#paint0_linear_0_4)"/>
-<g id="Union">
-<use xlink:href="#stroke0_0_4" fill="url(#paint1_radial_0_4)"/>
-<mask id="stroke1_0_4" fill="white">
-<use xlink:href="#stroke0_0_4"/>
-</mask>
-<path d="M160.023 66C161.895 66 163.61 67.0454 164.468 68.709C165.325 70.3727 165.182 72.3759 164.096 73.9004L145.791 99.5996H176.276C178.096 99.5996 179.772 100.589 180.652 102.182C181.533 103.774 181.478 105.72 180.51 107.261L134.744 180.08C133.617 181.873 131.483 182.761 129.417 182.298C127.351 181.835 125.799 180.12 125.546 178.018L122.001 148.619H89.5947C87.9068 148.619 86.3326 147.767 85.4092 146.354C84.4859 144.942 84.3372 143.158 85.0146 141.612L97.9883 112.013L62.9268 111.499C61.0127 111.471 59.282 110.353 58.4707 108.619C57.6595 106.885 57.9102 104.84 59.1152 103.353L87.876 67.8525C88.8253 66.6808 90.2537 66.0001 91.7617 66H160.023Z" stroke-width="4" stroke-linejoin="round" stroke="url(#paint2_linear_0_4)" stroke-opacity="0.3" mask="url(#stroke1_0_4)"/>
-</g>
-</g>
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="240" height="240" rx="54" fill="url(#paint0_linear_333_2)"/>
+<path d="M119.5 59C149.05 59 173 82.95 173 112.5V176.5C173 180.5 171.5 181.167 168.5 178.5L147.5 156.5C139.5 162.5 129.5 166 119.5 166C89.95 166 66 142.05 66 112.5C66 82.95 89.95 59 119.5 59ZM146 112.5C146 105.472 143.208 98.7314 138.238 93.7617C133.269 88.792 126.528 86 119.5 86C112.472 86 105.731 88.792 100.762 93.7617C95.792 98.7314 93 105.472 93 112.5C93 119.528 95.792 126.269 100.762 131.238C105.731 136.208 112.472 139 119.5 139C126.528 139 133.269 136.208 138.238 131.238C143.208 126.269 146 119.528 146 112.5Z" fill-rule="evenodd" clip-rule="evenodd" fill="url(#paint1_linear_333_2)"/>
 <defs>
-<linearGradient id="paint0_linear_0_4" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse">
+<linearGradient id="paint0_linear_333_2" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse">
 <stop stop-color="#1E6BEB"/>
 <stop offset="0.932391" stop-color="#1251CA"/>
 </linearGradient>
-<radialGradient id="paint1_radial_0_4" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(89 72.5) rotate(74.425) scale(114.109 113.609)">
-<stop offset="0.398776" stop-color="white"/>
-<stop offset="0.752216" stop-color="#B6CFFF"/>
-</radialGradient>
-<linearGradient id="paint2_linear_0_4" x1="119.638" y1="66" x2="119.638" y2="182.419" gradientUnits="userSpaceOnUse">
+<linearGradient id="paint1_linear_333_2" x1="183.5" y1="-59.5" x2="473.5" y2="230.5" gradientUnits="userSpaceOnUse">
 <stop stop-color="white"/>
-<stop offset="1" stop-color="white" stop-opacity="0.2"/>
+<stop offset="0.231708" stop-color="#EBF4FF"/>
+<stop offset="0.381265" stop-color="#DBEBFF"/>
+<stop offset="0.625" stop-color="#C4DEFF"/>
 </linearGradient>
-<path id="stroke0_0_4" d="M160.023 66C161.895 66 163.61 67.0454 164.468 68.709C165.325 70.3727 165.182 72.3759 164.096 73.9004L145.791 99.5996H176.276C178.096 99.5996 179.772 100.589 180.652 102.182C181.533 103.774 181.478 105.72 180.51 107.261L134.744 180.08C133.617 181.873 131.483 182.761 129.417 182.298C127.351 181.835 125.799 180.12 125.546 178.018L122.001 148.619H89.5947C87.9068 148.619 86.3326 147.767 85.4092 146.354C84.4859 144.942 84.3372 143.158 85.0146 141.612L97.9883 112.013L62.9268 111.499C61.0127 111.471 59.282 110.353 58.4707 108.619C57.6595 106.885 57.9102 104.84 59.1152 103.353L87.876 67.8525C88.8253 66.6808 90.2537 66.0001 91.7617 66H160.023Z"/>
 </defs>
 </svg>
