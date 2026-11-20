@@ -24,6 +24,7 @@ const { adminServices } = await import('../functions/src/firebase.js')
 let server, port, account, second
 let rewriteShouldFail = false
 const collectCalls = []
+const expandCalls = []
 const newsItem = { newsKey: 'c'.repeat(32), id: 'c'.repeat(32), title: '청년 일경험 지원사업 확대', excerpt: '졸업 예정자도 신청할 수 있다.', topicId: 'youth', publisher: '테스트', sourceUrl: 'https://example.com/test-article', publishedAt: new Date().toISOString(),
   tags: { topics: ['jobs', 'youth'], keywords: ['일경험'], ages: ['early20s'], occupations: ['university'], difficult: true, why: '졸업 예정자도 신청할 수 있어요' } }
 const fixtureArticle = { id: 'b'.repeat(32), topicId: 'economy', title: '테스트 기사', easyTitle: '테스트 기사', publisher: '테스트', publishedAt: '', sourceUrl: 'https://example.com/test-article', excerpt: '테스트 본문', originalParagraphs: ['오프라인 통합 테스트를 위한 기사 본문입니다.'], easyParagraphs: [], summary: [], comparison: '', reports: [] }
@@ -51,6 +52,7 @@ before(async () => {
       ? { offTopic: true, answer: '뉴스·기사 관련 질문을 도와드려요.' }
       : { offTopic: false, answer: `답변 ${history.length}: ${quote || question}` },
     catalog: async () => ({ items: [newsItem] }),
+    expand: async word => { expandCalls.push(word); return word.startsWith('백엔드') ? { meaningful: true, terms: ['일경험'] } : { meaningful: false, terms: [] } },
     collect: async (_db, options) => { collectCalls.push(options); return { stored: 1, tagged: 1, failedTopics: [] } },
   }).listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
@@ -134,6 +136,21 @@ test('the feed scores catalog stories per reader; feedback, bookmarks and reason
   assert.deepEqual([own.feedback, own.bookmarked], [null, false])
   assert.equal((await request(port, `/api/feed/${'d'.repeat(32)}`, undefined, token)).status, 404)
   assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/feedback`, { value: 'meh' }, token, 'PUT')).status, 400)
+})
+
+test('typed keywords are expanded once when saved and then match stories by meaning', async () => {
+  const token = account.idToken
+  const stamp = String(Date.now()).slice(-6)
+  const [backend, nonsense] = ['백엔드' + stamp, '흠흠냐' + stamp]
+  await request(port, '/api/profile', { topicIds: [], customKeywords: [backend, nonsense], ageGroup: 'early20s', occupation: 'university', privacyConsent: true }, token, 'PUT')
+  assert.deepEqual(expandCalls.sort(), [backend, nonsense])
+  const feed = (await request(port, '/api/feed', undefined, token)).data
+  assert.equal(feed.items[0]?.id, newsItem.newsKey)
+  assert.equal(feed.items[0].match.interest, 38)
+  assert.ok(feed.items[0].match.matchedTags.includes('#' + backend))
+  await request(port, '/api/profile', { customKeywords: [backend] }, token, 'PUT')
+  assert.equal(expandCalls.length, 2)
+  await request(port, '/api/profile', { topicIds: ['economy'], customKeywords: [] }, token, 'PUT')
 })
 
 test('chat rooms are created by the first message, continue with history, and can be deleted', async () => {

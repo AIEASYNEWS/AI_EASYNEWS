@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFeed, scoreMatch, similarArticles, grade, weightKeys, tagArticles, tagStoredNews } from '../src/matching.js'
+import { buildFeed, scoreMatch, similarArticles, grade, weightKeys, tagArticles, tagStoredNews, expandKeyword, keywordKey } from '../src/matching.js'
 
 const now = Date.parse('2026-11-20T03:00:00Z')
 const hoursAgo = hours => new Date(now - hours * 3600_000).toISOString()
@@ -94,4 +94,28 @@ test('tagging stops at the deadline and leaves the rest for the next run', async
   assert.equal(await tagStoredNews(db, records, { batchSize: 2, tag }), 4)
   assert.equal(calls, 2)
   assert.equal(writes.length, 4)
+})
+
+test('typed keywords also match by meaning through their AI expansions, slightly below a literal match', () => {
+  const server = { ...youthJob, title: '중소 SW기업 서버 개발자 채용 늘어', excerpt: 'API 개발 인력 수요가 커졌다.', topicId: 'technology',
+    tags: { ...youthJob.tags, topics: ['technology'], keywords: ['서버 개발자'], ages: ['all'], occupations: ['all'] } }
+  const plain = { topicIds: [], customKeywords: ['백엔드'], ageGroup: 'early20s', occupation: 'university' }
+  assert.equal(scoreMatch(plain, server, now).interest, 0)
+  const expanded = { ...plain, keywordExpansions: { [keywordKey('백엔드')]: { meaningful: true, terms: ['서버 개발', 'API'] } } }
+  const match = scoreMatch(expanded, server, now)
+  assert.equal(match.interest, 38)
+  assert.deepEqual(match.matchedTags, ['#백엔드'])
+  const literal = scoreMatch(expanded, { ...server, title: '백엔드 개발자 채용 늘어' }, now)
+  assert.equal(literal.interest, 44)
+  assert.equal(keywordKey('백 엔드'), keywordKey('백엔드'))
+})
+
+test('keyword expansion drops the keyword itself and returns nothing for meaningless input', async context => {
+  process.env.MONOROUTER_API_KEY = 'test-only-key'
+  process.env.MONOROUTER_MODEL = 'test-text-model'
+  const reply = value => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }] }))
+  const mock = context.mock.method(globalThis, 'fetch', async () => reply({ meaningful: true, terms: ['백엔드', '서버 개발', '서버 개발', 'API'] }))
+  assert.deepEqual(await expandKeyword('백엔드'), { meaningful: true, terms: ['서버 개발', 'API'] })
+  mock.mock.mockImplementation(async () => reply({ meaningful: false, terms: ['아무거나'] }))
+  assert.deepEqual(await expandKeyword('흠흠..냐'), { meaningful: false, terms: [] })
 })

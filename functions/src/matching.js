@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { TOPIC_IDS, TOPIC_LABELS } from './config.js'
 import { aiConfigured, complete, parseAiJson } from './ai.js'
@@ -86,6 +87,28 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 export const articleTime = item => Date.parse(item.publishedAt) || item.firstSeenAt || 0
 export const weightKeys = item => [...new Set([`topic:${item.tags?.topics?.[0] || item.topicId}`, ...(item.tags?.keywords || []).slice(0, 5).map(word => `kw:${normalize(word).slice(0, 30)}`)])]
 
+export const keywordKey = word => createHash('sha256').update(normalize(word)).digest('hex').slice(0, 32)
+
+const expansionSchema = z.object({
+  meaningful: z.boolean(),
+  terms: z.array(z.string().trim().min(2).max(20)).max(12).default([]),
+})
+
+/** Reads what a typed interest means and lists expressions a matching news story would contain. */
+export async function expandKeyword(keyword, signal) {
+  const prompt = `독자가 뉴스 관심사로 직접 입력한 낱말이에요. 뜻을 파악해, 이 관심사에 맞는 한국어 뉴스 제목·요약에 나올 표현을 만드세요.
+- terms: 동의어, 다른 표기(영문·약어 포함), 좁은 하위 개념, 직접 관련된 직무·제도·정책 이름을 최대 12개. 각 2~20자.
+- 낱말 자체는 terms에 넣지 마세요. 너무 넓어서 다른 기사에도 흔히 나오는 말(예: 정부, 사업, 개발, 지원, 기술, 시장)은 빼세요.
+- 오타가 분명하면 바로잡은 낱말을 terms에 넣으세요.
+- 뜻을 알 수 없거나 관심사로 볼 수 없으면 meaningful을 false로 하고 terms는 빈 배열로 두세요.
+JSON만 반환하세요: {"meaningful":true,"terms":["서버 개발","백엔드 개발자"]}
+<keyword>${JSON.stringify(keyword)}</keyword>`
+  const result = parseAiJson(await complete(tagInstruction, prompt, { signal, maxTokens: 600 }), expansionSchema)
+  const own = normalize(keyword)
+  const terms = result.meaningful ? [...new Set(result.terms.filter(term => normalize(term) !== own))] : []
+  return { meaningful: result.meaningful, terms }
+}
+
 export function grade(score) {
   if (score >= 90) return '매우 잘 맞아요'
   if (score >= STRONG_MATCH) return '잘 맞아요'
@@ -100,13 +123,18 @@ export function scoreMatch(profile, item, now = Date.now()) {
   const topics = item.tags?.topics?.length ? item.tags.topics : [item.topicId]
   const text = normalize([item.title, item.excerpt, ...(item.tags?.keywords || [])].join(' '))
   const keywordHits = custom.filter(word => normalize(word) && text.includes(normalize(word)))
+  // Meaning match: a related expression the AI derived from the keyword appears in the story.
+  const relatedHits = custom.filter(word => !keywordHits.includes(word) && (profile.keywordExpansions?.[keywordKey(word)]?.terms || [])
+    .some(term => normalize(term).length >= 2 && text.includes(normalize(term))))
   const matchedTopics = topics.filter(topic => interests.includes(topic))
   // Interests: the article's main field counts most; each further matching field and typed keyword adds a little.
   const firstMatch = topics.findIndex(topic => interests.includes(topic))
   let interest = firstMatch < 0 ? 0 : [36, 28, 22][Math.min(firstMatch, 2)] + 4 * (matchedTopics.length - 1)
   if (keywordHits.length) {
     const inTitle = keywordHits.some(word => normalize(item.title).includes(normalize(word)))
-    interest = Math.max(interest, 32) + 10 + 2 * (keywordHits.length - 1) + (inTitle ? 2 : 0)
+    interest = Math.max(interest, 32) + 10 + 2 * (keywordHits.length + relatedHits.length - 1) + (inTitle ? 2 : 0)
+  } else if (relatedHits.length) {
+    interest = Math.max(interest, 30) + 8 + 2 * (relatedHits.length - 1)
   }
   if (interest) {
     const weights = profile.keywordWeights || {}
@@ -134,6 +162,7 @@ export function scoreMatch(profile, item, now = Date.now()) {
   const matchedTags = [...new Set([
     ...matchedTopics.map(topic => TOPIC_LABELS[topic]),
     ...keywordHits,
+    ...relatedHits,
     ...(age.matched ? [ageTag[profile.ageGroup]] : []),
     ...(job.matched ? [OCCUPATIONS[profile.occupation]] : []),
   ])].map(tag => `#${tag.replace(/\s+/g, '')}`)

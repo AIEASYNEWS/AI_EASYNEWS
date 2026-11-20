@@ -9,12 +9,12 @@ import { registerDevice } from './push.js'
 import { readArticle, articleId } from './articles.js'
 import { parsePublicUrl } from './safeFetch.js'
 import { collectNews, getExploreNews } from './news.js'
-import { assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
+import { aiConfigured, assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
 import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
-import { AGE_GROUPS, GENDERS, OCCUPATIONS, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, similarArticles, tagStoredNews, weightKeys } from './matching.js'
+import { AGE_GROUPS, GENDERS, OCCUPATIONS, expandKeyword, keywordKey, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, similarArticles, tagStoredNews, weightKeys } from './matching.js'
 import {
   getProfile, saveProfile, nicknameAvailable, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead,
-  getFeedbackMap, saveFeedback, getArticleState, setBookmark, getCachedReason, saveReason, findConvertedArticle,
+  getFeedbackMap, saveFeedback, getKeywordExpansions, saveKeywordExpansion, getArticleState, setBookmark, getCachedReason, saveReason, findConvertedArticle,
   listChatRooms, getChatRoom, appendChatExchange, deleteChatRoom,
 } from './store.js'
 
@@ -39,8 +39,30 @@ const rate = new Map()
 
 const roomArticle = item => ({ id: item.newsKey, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt || '', topicId: item.tags?.topics?.[0] || item.topicId, sourceUrl: item.sourceUrl })
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, expand = expandKeyword, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
+  const expanding = new Map()
+  /** Creates missing keyword meaning expansions once per keyword; failures leave plain text matching. */
+  function ensureExpansions(words, known = {}) {
+    const pending = words.filter(word => !known[keywordKey(word)]).map(word => {
+      const key = keywordKey(word)
+      if (!expanding.has(key)) {
+        expanding.set(key, Promise.resolve().then(() => expand(word, AbortSignal.timeout(20_000)))
+          .then(value => saveKeywordExpansion(key, word, value)).catch(() => {}).finally(() => expanding.delete(key)))
+      }
+      return expanding.get(key)
+    })
+    return Promise.all(pending)
+  }
+  /** Attaches keyword expansions; missing ones are generated in the background for the next visit. */
+  async function readerProfile(uid) {
+    const profile = await getProfile(uid)
+    const words = profile.customKeywords || []
+    if (!words.length) return profile
+    const keywordExpansions = await getKeywordExpansions(words.map(keywordKey)).catch(() => ({}))
+    if (aiConfigured()) void ensureExpansions(words, keywordExpansions)
+    return { ...profile, keywordExpansions }
+  }
   const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
   app.use((request, response, next) => {
@@ -131,6 +153,11 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     if (update.nickname !== undefined && request.user.anonymous) throw new AppError('MEMBER_REQUIRED', '로그인 후 닉네임을 정할 수 있어요.', 403)
     if (update.occupation && update.occupation !== 'other') update.occupationOther = ''
     await saveProfile(request.user.uid, update)
+    // Understand new typed keywords now so the next home visit already matches by meaning.
+    if (update.customKeywords?.length && aiConfigured()) {
+      const known = await getKeywordExpansions(update.customKeywords.map(keywordKey)).catch(() => ({}))
+      await ensureExpansions(update.customKeywords, known)
+    }
     const { keywordWeights: _weights, notificationsEnabled: _notifications, ...profile } = await getProfile(request.user.uid)
     response.json(profile)
   })
@@ -162,7 +189,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     return item
   }
   router.get('/feed', async (request, response) => {
-    const [profile, feedback, { items }] = await Promise.all([getProfile(request.user.uid), getFeedbackMap(request.user.uid), catalog()])
+    const [profile, feedback, { items }] = await Promise.all([readerProfile(request.user.uid), getFeedbackMap(request.user.uid), catalog()])
     const feed = buildFeed(profile, items, { feedback })
     // Articles collected before tagging existed are tagged lazily; the next visit gets the AI-backed scores.
     void tagStoredNews(adminServices().db, items.filter(item => Date.now() - (Date.parse(item.publishedAt) || item.firstSeenAt || 0) < 86400_000), { limit: 45 }).catch(() => {})
@@ -175,7 +202,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.get('/feed/:id', async (request, response) => {
     const item = await loadItem(request.params.id)
     const uid = request.user.uid
-    const [profile, state, converted, { items }] = await Promise.all([getProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl)), catalog()])
+    const [profile, state, converted, { items }] = await Promise.all([readerProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl)), catalog()])
     const profileKey = JSON.stringify(profileSummary(profile))
     response.json({
       ...feedItem(item, scoreMatch(profile, item)), nickname: profile.nickname || '',

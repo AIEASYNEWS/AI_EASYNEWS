@@ -41,6 +41,36 @@ export async function nicknameAvailable(nickname, uid) {
   return !snapshot.exists || snapshot.data().uid === uid
 }
 
+const expansionCache = new Map()
+const expansionRef = key => adminServices().db.collection('keywordExpansions').doc(key)
+
+/** AI meaning expansions of typed keywords, shared by every reader who typed the same keyword. */
+export async function getKeywordExpansions(keys) {
+  const now = Date.now()
+  const result = {}
+  const missing = []
+  for (const key of new Set(keys)) {
+    const hit = expansionCache.get(key)
+    if (hit && hit.until > now) result[key] = hit.value
+    else missing.push(key)
+  }
+  if (missing.length) {
+    const snapshots = await adminServices().db.getAll(...missing.map(expansionRef))
+    snapshots.forEach((snapshot, index) => {
+      if (!snapshot.exists) return
+      const { terms = [], meaningful = false } = snapshot.data()
+      result[missing[index]] = { terms, meaningful }
+      expansionCache.set(missing[index], { value: result[missing[index]], until: now + 10 * 60_000 })
+    })
+  }
+  return result
+}
+
+export async function saveKeywordExpansion(key, keyword, value) {
+  await expansionRef(key).set({ keyword, ...value, createdAt: FieldValue.serverTimestamp() })
+  expansionCache.set(key, { value, until: Date.now() + 10 * 60_000 })
+}
+
 export async function getFeedbackMap(uid) {
   const snapshot = await userRef(uid).collection('feedback').orderBy('updatedAt', 'desc').limit(300).get()
   return Object.fromEntries(snapshot.docs.map(document => [document.id, document.data().value]))
