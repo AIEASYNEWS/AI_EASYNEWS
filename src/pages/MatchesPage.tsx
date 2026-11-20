@@ -23,7 +23,7 @@ export function MatchesPage({ onBack, onArticle, onChats }: { onBack: () => void
   }, [version])
   const topics = [...new Set(feed?.items.map(item => item.topics[0]) ?? [])]
   const items = feed?.items.filter(item => filter === 'all' || item.topics[0] === filter) ?? []
-  return <Screen pageTitle="맞춤 기사" heading="맞춤 기사" onBack={onBack} contentClassName="px-5 pt-2" overlay={<ChatFab onClick={onChats} label="소식이 대화 기록" />}>
+  return <Screen pageTitle="맞춤 기사" heading="맞춤 기사" onBack={onBack} contentClassName="px-5 pt-2" overlay={<ChatFab onClick={onChats} label="토리 대화 기록" />}>
     {error ? <RequestState error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} />
       : !feed ? <div role="status" aria-label="맞춤 기사를 불러오고 있어요" className="space-y-3"><Skeleton className="h-[52px] w-full rounded-xl" />{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-[150px] w-full rounded-xl" />)}</div>
         : <>
