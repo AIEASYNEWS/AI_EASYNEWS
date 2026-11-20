@@ -121,7 +121,7 @@ test('the feed scores catalog stories per reader; feedback, bookmarks and reason
   const feed = (await request(port, '/api/feed', undefined, token)).data
   assert.deepEqual([feed.total, feed.matched, feed.hasInterests, feed.profileComplete], [1, 1, true, true])
   assert.equal(feed.items[0].id, newsItem.newsKey)
-  assert.ok(feed.items[0].match.score >= 80)
+  assert.equal(feed.items[0].match.score, 78)
   const detail = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, token)).data
   assert.deepEqual([detail.reason, detail.feedback, detail.bookmarked, detail.converted], [null, null, false, null])
   assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/reason`, {}, token)).data.reason, '취업 준비에 도움이 돼요.')

@@ -13,7 +13,7 @@ const youthJob = {
 
 test('scores interests 50 + age/occupation 30 + timeliness 20 and lists the matched conditions', () => {
   const match = scoreMatch(reader, youthJob, now)
-  assert.deepEqual([match.interest, match.personal, match.timeliness], [38, 30, 20])
+  assert.deepEqual([match.interest, match.personal, match.timeliness], [40, 28, 20])
   assert.equal(match.score, 88)
   assert.equal(match.grade, '잘 맞아요')
   assert.deepEqual(match.matchedTags, ['#취업', '#청년정책', '#20대', '#대학생'])
@@ -25,7 +25,7 @@ test('scores interests 50 + age/occupation 30 + timeliness 20 and lists the matc
 test('readers without interests or profile, and untagged stories, get neutral partial scores', () => {
   const match = scoreMatch({ topicIds: [], customKeywords: [] }, { ...youthJob, tags: undefined }, now)
   assert.equal(match.interest, 0)
-  assert.equal(match.personal, 16)
+  assert.equal(match.personal, 14)
   assert.equal(grade(59), '조금 맞아요')
 })
 
@@ -33,7 +33,7 @@ test('feedback weights move the interest score within ±8 and a disliked story l
   const keys = weightKeys(youthJob)
   assert.deepEqual(keys, ['topic:jobs', 'kw:일경험', 'kw:참여수당'])
   const liked = scoreMatch({ ...reader, keywordWeights: Object.fromEntries(keys.map(key => [key, 3])) }, youthJob, now)
-  assert.equal(liked.interest, 46)
+  assert.equal(liked.interest, 48)
   const feed = buildFeed(reader, [youthJob], { now, feedback: { [youthJob.newsKey]: 'bad' } })
   assert.equal(feed.total, 1)
   assert.equal(feed.items.length, 0)
@@ -48,6 +48,18 @@ test('the feed counts the last 24 hours and lists only stories of 60% or more, b
   assert.deepEqual(feed.items.map(item => item.id), [youthJob.newsKey, second.newsKey])
   assert.equal(feed.items[0].why, youthJob.tags.why)
   assert.equal(feed.items[0].match.score, 88)
+  assert.equal(feed.items[1].match.score, 78)
+})
+
+test('scores spread out instead of collapsing onto one value', () => {
+  const broad = { ...youthJob, tags: { ...youthJob.tags, topics: ['youth'], ages: ['all'], occupations: ['all'] } }
+  const scores = [
+    scoreMatch(reader, youthJob, now).score,
+    scoreMatch(reader, broad, now).score,
+    scoreMatch(reader, { ...broad, publishedAt: hoursAgo(9) }, now).score,
+    scoreMatch(reader, { ...broad, tags: { ...broad.tags, topics: ['culture', 'youth'] } }, now).score,
+  ]
+  assert.deepEqual(scores, [88, 74, 70, 66])
 })
 
 test('similar stories come from other publishers and share the subject', () => {

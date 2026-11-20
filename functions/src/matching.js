@@ -101,27 +101,34 @@ export function scoreMatch(profile, item, now = Date.now()) {
   const text = normalize([item.title, item.excerpt, ...(item.tags?.keywords || [])].join(' '))
   const keywordHits = custom.filter(word => normalize(word) && text.includes(normalize(word)))
   const matchedTopics = topics.filter(topic => interests.includes(topic))
-  let interest = interests.includes(topics[0]) || interests.includes(item.topicId) ? 38 : matchedTopics.length ? 30 : 0
-  if (keywordHits.length) interest = Math.max(interest, 34) + 12
+  // Interests: the article's main field counts most; each further matching field and typed keyword adds a little.
+  const firstMatch = topics.findIndex(topic => interests.includes(topic))
+  let interest = firstMatch < 0 ? 0 : [36, 28, 22][Math.min(firstMatch, 2)] + 4 * (matchedTopics.length - 1)
+  if (keywordHits.length) {
+    const inTitle = keywordHits.some(word => normalize(item.title).includes(normalize(word)))
+    interest = Math.max(interest, 32) + 10 + 2 * (keywordHits.length - 1) + (inTitle ? 2 : 0)
+  }
   if (interest) {
     const weights = profile.keywordWeights || {}
     interest += clamp(weightKeys(item).reduce((sum, key) => sum + (weights[key] || 0), 0) * 2, -8, 8)
   }
   interest = clamp(interest, 0, 50)
 
+  // Reader fit: a story aimed at a narrow group that includes the reader beats one meant for everyone.
   const fit = (value, targets, known) => {
-    if (!value) return { points: 8, matched: false }
-    if (!targets?.length) return { points: 9, matched: false }
-    if (targets.includes(value)) return { points: 15, matched: true }
-    if (targets.includes('all') || !known.includes(value)) return { points: 11, matched: false }
+    if (!value) return { points: 7, matched: false }
+    if (!targets?.length) return { points: 8, matched: false }
+    if (targets.includes(value)) return { points: Math.max(11, 16 - targets.length), matched: true }
+    if (targets.includes('all') || !known.includes(value)) return { points: 9, matched: false }
     return { points: 3, matched: false }
   }
   const age = fit(profile.ageGroup, item.tags?.ages, AGE_IDS)
   const job = fit(profile.occupation === 'other' ? '' : profile.occupation, item.tags?.occupations, OCCUPATION_IDS)
-  const personal = age.points + (profile.occupation === 'other' ? 9 : job.points)
+  const personal = age.points + (profile.occupation === 'other' ? 8 : job.points)
 
+  // Timeliness decays by half a point per hour: 20 now, 14 after 12 hours, 8 after a day.
   const hours = (now - articleTime(item)) / 3600_000
-  const timeliness = !Number.isFinite(hours) || hours < 0 ? 16 : hours <= 3 ? 20 : hours <= 6 ? 19 : hours <= 12 ? 18 : hours <= 24 ? 16 : hours <= 48 ? 11 : hours <= 72 ? 7 : 3
+  const timeliness = !Number.isFinite(hours) ? 12 : hours <= 0 ? 20 : Math.max(4, Math.round(20 - hours / 2))
 
   const score = interest + personal + timeliness
   const matchedTags = [...new Set([
