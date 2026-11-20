@@ -99,7 +99,7 @@ function KeywordSheet({ initial, onClose, onSaved }: { initial: ProfileDraft; on
     try { await saveProfile({ topicIds: draft.topicIds, customKeywords: draft.customKeywords, completed: true }); onSaved() }
     catch (cause) { setError((cause as Error).message) } finally { setPending(false) }
   }
-  return <Dialog open labelledBy="keyword-sheet-title" onClose={onClose} sheet className="flex max-h-[90svh]! flex-col overflow-hidden! px-0! pt-2! pb-0!">
+  return <Dialog open labelledBy="keyword-sheet-title" onClose={onClose} sheet className="flex h-[85svh]! max-h-[85svh]! flex-col overflow-hidden! px-0! pt-2! pb-0!">
     <span aria-hidden="true" className="mx-auto block h-1 w-9 shrink-0 rounded-full bg-[#d5dce5]" />
     <div className="flex shrink-0 items-center justify-between px-5 pt-4">
       <h2 id="keyword-sheet-title" className="text-lg font-bold">매칭 키워드 편집</h2>

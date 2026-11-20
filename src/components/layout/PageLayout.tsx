@@ -23,7 +23,7 @@ export function PageLayout({ title, children, header, onBack, footer, contentCla
 
   const pageHeader = (
     <>
-      <div aria-hidden="true" className={`h-[47px] shrink-0 ${hero ? 'bg-white' : ''}`} />
+      <div aria-hidden="true" className={`h-[max(8px,env(safe-area-inset-top))] shrink-0 ${hero ? 'bg-white' : ''}`} />
       <header className={`relative flex h-14 shrink-0 items-center justify-between px-5 ${hero ? 'bg-white' : ''}`}>
         {onBack ? <>
           <button type="button" aria-label="뒤로 가기" onClick={onBack} className="-ml-2 flex size-10 cursor-pointer items-center justify-center rounded-lg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2">
