@@ -61,6 +61,18 @@ export async function getArticle(uid, id) {
   return article
 }
 
+export async function saveComparison(uid, article, comparison) {
+  const ref = userRef(uid).collection('articles').doc(article.id)
+  return adminServices().db.runTransaction(async tx => {
+    const snapshot = await tx.get(ref)
+    if (!snapshot.exists) throw new AppError('ARTICLE_NOT_FOUND', '저장된 기사를 찾지 못했어요.', 404)
+    const { savedAt: _savedAt, ...stored } = snapshot.data()
+    if (stored.comparisonStatus !== 'pending' || stored.comparisonPlan?.revision !== article.comparisonPlan.revision) return stored
+    tx.update(ref, comparison)
+    return { ...stored, ...comparison }
+  })
+}
+
 export async function getHistory(uid) {
   const snapshot = await userRef(uid).collection('articles').orderBy('savedAt', 'desc').limit(30).get()
   return snapshot.docs.map(document => {

@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
@@ -7,19 +7,34 @@ import { adminServices, requireUser } from './firebase.js'
 import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle } from './articles.js'
-import { getNaverHubNews, getNews, relatedCandidates } from './news.js'
+import { getExploreNews, relatedCandidates } from './news.js'
 import { buildComparison } from './comparison.js'
 import { assertAiConfigured, rewriteArticle, compareArticles, answerQuestion } from './ai.js'
-import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead } from './store.js'
+import { topicNews, topicNotifications } from './newsCatalog.js'
+import { getProfile, saveProfile, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead, saveComparison } from './store.js'
 
 const urlSchema = z.object({ sourceUrl: z.string().url().max(2048) }).strict()
 const profileSchema = z.object({ topicIds: z.array(z.enum(TOPIC_IDS)).max(7).refine(ids => new Set(ids).size === ids.length), completed: z.boolean() }).strict()
 const questionSchema = z.object({ articleId: z.string().regex(/^[a-f0-9]{32}$/), sourceUrl: z.string().url().max(2048), sentence: z.string().trim().min(1).max(5000), question: z.string().trim().min(1).max(1000) }).strict()
 const rate = new Map()
-const homeNewsLimit = 10
 
 export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, findRelated = relatedCandidates, compare = compareArticles, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
+  const comparisons = new Map()
+  const searches = new Map()
+  function findSavedCandidates(article) {
+    const { revision, keywords, queries } = article.comparisonPlan
+    const hit = searches.get(revision)
+    if (hit && hit.until > Date.now()) return hit.promise
+    const promise = Promise.resolve().then(() => findRelated(article, keywords, { queries, signal: AbortSignal.timeout(30000) }))
+      .catch(error => {
+        if (searches.get(revision)?.promise === promise) searches.delete(revision)
+        throw error
+      })
+    searches.set(revision, { until: Date.now() + 120000, promise })
+    if (searches.size > 100) searches.delete(searches.keys().next().value)
+    return promise
+  }
   const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
   app.use((request, response, next) => {
@@ -50,7 +65,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.get('/health', (_request, response) => response.json({ ok: true, aiConfigured: Boolean(getConfig().aiKey && getConfig().aiModel), firebaseProject: getConfig().projectId }))
   router.get('/news', async (request, response) => {
     const query = z.object({ query: z.string().max(100).default(''), topic: z.enum(['', ...TOPIC_IDS]).default(''), sort: z.enum(['latest', 'oldest']).default('latest'), page: z.coerce.number().int().min(1).max(20).default(1) }).parse(request.query)
-    response.json(await getNews(query))
+    response.json(await getExploreNews(query))
   })
   router.post('/articles/preview', async (request, response) => response.json(await readArticle(urlSchema.parse(request.body).sourceUrl)))
   router.get('/auth/username', async (request, response) => {
@@ -73,58 +88,60 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
       response.json(await subscriptionFor(request.user))
     })
   }
-  router.put('/notification-device', memberOnly, async (request, response) => {
+  router.put('/notification-device', async (request, response) => {
     const { token, remove } = z.object({ token: z.string().min(16).max(4096), remove: z.boolean() }).strict().parse(request.body)
     response.json(await registerDevice(request.user.uid, token, remove))
   })
-  router.get('/notification-settings', memberOnly, async (request, response) => {
+  router.get('/notification-settings', async (request, response) => {
     const profile = await getProfile(request.user.uid)
     response.json({ enabled: profile.notificationsEnabled !== false, topicIds: profile.topicIds })
   })
-  router.put('/notification-settings', memberOnly, async (request, response) => {
+  router.put('/notification-settings', async (request, response) => {
     const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(request.body)
     await saveProfile(request.user.uid, { notificationsEnabled: enabled, notificationsChangedAt: Date.now() })
     response.json({ enabled })
   })
-  router.get('/profile', async (request, response) => response.json(await getProfile(request.user.uid)))
+  router.get('/profile', async (request, response) => {
+    const { topicIds, completed } = await getProfile(request.user.uid)
+    response.json({ topicIds, completed })
+  })
   router.put('/profile', async (request, response) => response.json(await saveProfile(request.user.uid, profileSchema.parse(request.body))))
   router.get('/quota', async (request, response) => {
     const plan = await subscriptionFor(request.user)
     response.json({ ...(plan.active ? { remaining: null, limit: null, unlimited: true } : await getQuota(request.user.uid)), subscriber: plan.active })
   })
   router.get('/history', async (request, response) => response.json(await getHistory(request.user.uid)))
-  router.get('/recommendations', memberOnly, async (request, response) => {
+  router.get('/recommendations', async (request, response) => {
     const profile = await getProfile(request.user.uid)
-    const topics = (profile.topicIds ?? []).filter(topic => TOPIC_IDS.includes(topic))
-    const { naverHub } = getConfig()
-    if (naverHub) {
-      const searchTopics = topics.length ? topics : [TOPIC_IDS[randomInt(TOPIC_IDS.length)]]
-      const share = Math.floor(homeNewsLimit / searchTopics.length)
-      const remainder = homeNewsLimit % searchTopics.length
-      const results = await Promise.all(searchTopics.map((topic, index) => getNaverHubNews(topic, naverHub, share + Number(index < remainder))))
-      const items = results.flatMap(result => result.items)
-      return response.json({ items, total: items.length, hasMore: false, source: 'naver-hub' })
-    }
-    const news = await getNews({ topics, limit: topics.length ? homeNewsLimit : 30 })
-    if (topics.length) return response.json({ ...news, hasMore: false })
-    const remaining = news.items.map((_, index) => index)
-    const selected = new Set()
-    while (remaining.length && selected.size < homeNewsLimit) selected.add(remaining.splice(randomInt(remaining.length), 1)[0])
-    response.json({ ...news, items: news.items.filter((_, index) => selected.has(index)), hasMore: false })
+    response.json(await topicNews(profile.topicIds))
   })
-  router.get('/notifications', memberOnly, async (request, response) => {
+  router.get('/notifications', async (request, response) => {
     const profile = await getProfile(request.user.uid)
-    if (profile.notificationsEnabled === false || !profile.topicIds?.length) return response.json([])
-    const [news, reads] = await Promise.all([getNews({ topics: profile.topicIds, limit: 20 }), notificationReads(request.user.uid)])
-    response.json(news.items.map(item => ({ ...item, read: reads.has(item.id) })))
+    const [items, reads] = await Promise.all([topicNotifications(profile), notificationReads(request.user.uid)])
+    response.json(items.map(item => ({ ...item, read: reads.has(item.id) })))
   })
-  router.post('/notifications/:id/read', memberOnly, async (request, response) => {
+  router.post('/notifications/:id/read', async (request, response) => {
     const id = z.string().regex(/^[a-f0-9]{32}$/).parse(request.params.id)
     response.json(await markNotificationRead(request.user.uid, id))
   })
   router.get('/articles/:id', async (request, response) => {
     if (!/^[a-f0-9]{32}$/.test(request.params.id)) throw new AppError('INVALID_ID', '기사 주소를 확인해 주세요.')
     response.json(await getArticle(request.user.uid, request.params.id))
+  })
+  router.post('/articles/:id/comparison', async (request, response) => {
+    const id = z.string().regex(/^[a-f0-9]{32}$/).parse(request.params.id)
+    const uid = request.user.uid
+    const article = await getArticle(uid, id)
+    if (article.comparisonStatus !== 'pending') return response.json(article)
+    const { revision, keywords, queries } = article.comparisonPlan
+    const key = JSON.stringify([uid, id, revision])
+    let pending = comparisons.get(key)
+    if (!pending) {
+      pending = buildComparison(article, keywords, { queries, findRelated: findSavedCandidates, articleReader, compare })
+        .then(result => saveComparison(uid, article, result)).finally(() => comparisons.delete(key))
+      comparisons.set(key, pending)
+    }
+    response.json(await pending)
   })
   router.post('/questions', async (request, response) => {
     assertAiConfigured()
@@ -140,7 +157,7 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   })
   router.post('/convert', async (request, response) => {
     assertAiConfigured()
-    const { sourceUrl } = urlSchema.parse(request.body)
+    const { sourceUrl, deferComparison } = urlSchema.extend({ deferComparison: z.boolean().default(false) }).parse(request.body)
     const settle = await reserveConversion(request.user.uid)
     const controller = new AbortController()
     const disconnect = () => { if (!response.writableEnded) controller.abort() }
@@ -153,13 +170,32 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     try {
       send('progress', { step: 1 })
       const article = await articleReader(sourceUrl, controller.signal)
+      if (deferComparison) {
+        const previous = await getArticle(request.user.uid, article.id).catch(error => {
+          if (error.code !== 'ARTICLE_NOT_FOUND') throw error
+          return null
+        })
+        if (previous?.convertedAt > Date.now() - 600000 && previous.title === article.title &&
+            ['ready', 'pending', 'no-candidates', 'no-distinct-perspective'].includes(previous.comparisonStatus) &&
+            JSON.stringify(previous.originalParagraphs) === JSON.stringify(article.originalParagraphs)) {
+          await settle()
+          send('result', previous)
+          return
+        }
+      }
       send('progress', { step: 2 })
       const { keywords, comparisonQueries = [], ...rewritten } = await rewrite(article, controller.signal)
       Object.assign(article, rewritten)
-      send('progress', { step: 3 })
-      Object.assign(article, await buildComparison(article, keywords, {
-        queries: comparisonQueries, signal: controller.signal, findRelated, articleReader, compare,
-      }))
+      if (deferComparison) {
+        article.convertedAt = Date.now()
+        article.comparisonStatus = 'pending'
+        article.comparisonPlan = { revision: randomUUID(), keywords, queries: comparisonQueries }
+      } else {
+        send('progress', { step: 3 })
+        Object.assign(article, await buildComparison(article, keywords, {
+          queries: comparisonQueries, signal: controller.signal, findRelated, articleReader, compare,
+        }))
+      }
       controller.signal.throwIfAborted()
       await settle(article)
       send('result', article)

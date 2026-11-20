@@ -1,4 +1,5 @@
 import { createApp } from './app.js'
+import { collectNews } from './news.js'
 import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
 // Honor the developer environment's configured HTTP proxy for fixed provider APIs.
@@ -14,3 +15,24 @@ if (!process.env.FIREBASE_AUTH_EMULATOR_HOST && !process.env.GOOGLE_APPLICATION_
   console.warn('Firebase 연결이 아직 설정되지 않았습니다. 로컬 테스트는 npm run dev:local을 사용하세요.')
 }
 createApp().listen(8787, '127.0.0.1', () => console.log('EasyNews API: http://127.0.0.1:8787'))
+
+// The local Auth/Firestore emulator stack has no Cloud Scheduler.
+if (process.env.FIRESTORE_EMULATOR_HOST || process.env.LOCAL_NEWS_COLLECTOR === 'true') {
+  const interval = 30 * 60_000
+  let retryDelay = 60_000
+  async function sync() {
+    let delay = interval
+    try {
+      await collectNews()
+      retryDelay = 60_000
+    } catch (error) {
+      console.warn('뉴스 수집 실패:', error.code || error.name)
+      if (!['NEWS_NOT_CONFIGURED', 'NAVER_HUB_AUTH_FAILED'].includes(error.code)) {
+        delay = retryDelay
+        retryDelay = Math.min(interval, 2 * retryDelay)
+      }
+    }
+    setTimeout(sync, delay).unref()
+  }
+  void sync()
+}

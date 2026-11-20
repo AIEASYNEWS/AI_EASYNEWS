@@ -44,7 +44,7 @@ export async function buildComparison(article, keywords, {
       const related = []
       while (offset < candidates.length && related.length < 8) {
         comparisonSignal.throwIfAborted()
-        const next = candidates.slice(offset, offset + Math.min(3, 8 - related.length))
+        const next = candidates.slice(offset, offset + (8 - related.length))
         offset += next.length
         const batch = await Promise.allSettled(next.map(item =>
           articleReader(item.sourceUrl, AbortSignal.any([comparisonSignal, AbortSignal.timeout(8000)]))))

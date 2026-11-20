@@ -39,6 +39,7 @@ test('an English article yields Korean reading text and a verified opposing stor
     return aiResponse({ originalFocus: '통근 시간 단축', reports: [{
       id: other.id, koreanTitle: '이용자 단체가 새 시간표에 이의를 제기했어요', relation: 'opposing', kind: 'different-perspective',
       focus: '시의회는 통근 시간이 줄어든다고 봤고, 이용자 단체는 오히려 늘어난다고 지적했어요.',
+      summary: ['이용자 단체는 새 시간표대로라면 통근 시간이 더 걸린다고 말했어요.', '시의회에 아침 환승 시간도 고려해 달라고 요청했어요.'],
       viewpoint: '통근 시간', originalEvidence: originalQuote, relatedEvidence: quote,
     }] })
   })
@@ -56,6 +57,7 @@ test('an English article yields Korean reading text and a verified opposing stor
   assert.equal(compared.reports[0].sourceUrl, other.sourceUrl)
   assert.match(compared.reports[0].koreanTitle, /이용자/)
   assert.equal(compared.reports[0].relatedEvidence, quote)
+  assert.equal(compared.reports[0].summary.length, 2)
 })
 
 test('untranslated output is retried once and never saved as a Korean result', async context => {

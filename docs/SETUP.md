@@ -55,6 +55,7 @@ Vercel 프로젝트의 환경변수를 설정한 뒤 새로 배포해야 합니�
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | 서비스 계정 원본 JSON 전체, Production의 Secret으로만 저장 |
 | `MONOROUTER_API_KEY` | Production의 Secret으로만 저장 |
 | `MONOROUTER_MODEL`, `MONOROUTER_BASE_URL` | 사용할 모델 ID와 MonoRouter 주소 |
+| `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET` | Firebase 예약 수집 함수에 설정하는 서버 비밀 값 |
 | `NEWS_RSS_FEEDS` | 사용할 RSS 주소 목록 |
 | `NODE_OPTIONS` | 프로젝트 설정에 `--experimental-require-module` 지정 |
 | `ALLOWED_ORIGINS` | 운영 프론트엔드 Origin 목록 |
@@ -81,8 +82,10 @@ Firebase Hosting은 `/api/**`를 함수에 연결합니다. 기존 Vercel 정적
 
 ## 뉴스와 AI
 
-- 홈에 네이버 뉴스 검색 결과를 표시하려면 [NAVER API HUB](https://www.ncloud.com/product/applicationService/naverApiHub)에 뉴스 검색 API를 등록하고, 발급된 Client ID와 Client Secret을 서버의 `.env.local`에 `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`으로 설정합니다. 홈은 관심 주제별 최신 결과를 합해 최대 10건을 표시합니다. 선택한 주제가 없으면 한 주제를 무작위로 골라 최근 결과를 가져옵니다. 카드에서 앱 내 기사 미리보기가 열립니다.
-- RSS 공급원은 `NEWS_RSS_FEEDS`에 설정합니다. 로컬 설정에는 한겨레·연합뉴스 RSS를 사용합니다. 기존 개발자센터용 `NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET`이 있으면 기존 뉴스 공급원에서 우선 사용합니다. RSS와 기존 개발자센터용 키가 모두 비어 있으면 GDELT 최근 72시간 기사 메타데이터를 사용합니다. RSS/GDELT 검색은 수집된 제목·언론사 범위에서 수행합니다.
+- 매시 정각과 30분(한국 시간)에 `notifyInterestNews`가 NAVER API HUB에서 7개 주제별 최신순 기사 최대 35건씩 조회하고 Firestore에 저장합니다. 수집 함수의 Firebase Secret Manager에 `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`을 설정합니다.
+- 홈과 탐색은 저장된 기사 중 발행일 기준 최신 480건을 읽습니다. 검색은 제목·발췌문·언론사에 적용하며, 주제 필터와 24건 단위 페이지를 지원합니다. 같은 서버에서는 DB 조회 결과를 최대 5분간 재사용합니다. 홈은 이 목록에서 선택한 관심 주제의 기사를 표시합니다. 첫 수집 전에는 목록이 비어 있습니다.
+- `npm run dev:local`은 에뮬레이터용 API 시작 시 한 번 수집하고 이후 30분마다 수집합니다. 에뮬레이터가 아닌 로컬 API에서 수집기도 실행하려면 `.env.local`에 `LOCAL_NEWS_COLLECTOR=true`를 지정합니다. 운영 예약 함수가 같은 DB를 갱신한다면 로컬 API는 기본 설정으로 실행합니다. 기기 푸시는 배포된 예약 함수에서 발송합니다.
+- 기사 비교에 사용하는 추가 RSS 공급원은 `NEWS_RSS_FEEDS`에 설정합니다.
 - 로컬 개발 환경에 HTTPS 프록시가 설정되어 있으면 검증한 주요 언론사의 정확한 HTTPS 주소에만 프록시를 사용합니다. 모든 리다이렉트에서 공개 주소를 다시 확인하며, 다른 주소는 DNS를 고정한 연결을 유지합니다.
 - 공개 URL의 HTML을 Readability로 추출합니다. 로그인/유료/스크립트 전용 기사는 읽지 못할 수 있으며 실패로 안내합니다. 원문 출처 링크를 유지합니다. 내부 IP, 잘못된 URL, 내부 주소로의 리다이렉트, 과도한 응답 크기를 차단합니다.
 - 쉬운말 본문/요약은 실제 AI 응답을 검증한 뒤 저장합니다. 비교는 실제로 본문을 읽은 관련 기사만 대상으로 하며, 없거나 실패하면 이를 표시합니다. 예시 기사나 미리 정한 답변으로 대체하지 않습니다.
@@ -94,7 +97,11 @@ Firebase Hosting은 `/api/**`를 함수에 연결합니다. 기존 Vercel 정적
 
 Firebase 웹 앱의 발신자 ID와 Cloud Messaging의 웹 푸시 인증서 공개 키를 각각 `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_VAPID_KEY`에 설정하고 다시 빌드합니다. 알림 설정에서 **이 기기에서도 알림 받기**를 눌러 브라우저 권한을 허용하면 FCM 토큰이 서버에 등록됩니다. HTTPS 또는 localhost와 웹 푸시를 지원하는 브라우저가 필요합니다.
 
-뉴스 발송은 `notifyInterestNews` 예약 함수가 15분마다 수행합니다. Vercel에서 웹/API를 운영하는 경우에도 이 Firebase 함수를 별도로 배포하고 뉴스 공급원을 설정해야 합니다. 기기에 등록된 시점 이후의 관심 기사 중 가장 최근 기사 한 건을 보내며, 전체 목록은 앱에서 확인할 수 있습니다.
+기사 수집과 DB 저장이 끝나면 같은 예약 함수가 알림을 켠 기기에 저장된 관심 주제와 기사 주제를 비교합니다. 웹/API를 Vercel에서 운영해도 Firebase 예약 함수 배포가 필요합니다.
+
+수집한 기사 메타데이터는 `newsArticles/{newsKey}`에 저장합니다. 문서 ID는 추적 파라미터와 프래그먼트를 제거한 URL의 SHA-256 해시 앞 32자리입니다. 원문 주소와 기사 식별용 쿼리는 보존합니다. 같은 기사에 변경이 있으면 기존 문서를 갱신합니다.
+
+알림은 등록 기기별로 30분에 최대 한 건입니다. 최근 24시간 안에 발행된 기사 중 기기 등록과 알림 설정 변경 이후의 관심 주제 기사를 고릅니다. `users/{uid}/pushDeliveries`에 기기와 기사 키를 트랜잭션으로 먼저 기록합니다. 같은 언론사에서 제목과 20자 이상의 발췌문이 모두 같은 경우에는 다른 URL도 중복으로 처리합니다. FCM 접수 성공은 `accepted`, 접수 결과가 불확실하면 `unconfirmed`를 기록합니다. 응답이 불확실한 건은 중복 방지를 위해 자동 재발송하지 않습니다. FCM이 호출량 초과로 명시적으로 거절하면 예약을 풀고 다음 주기에 재시도할 수 있습니다.
 
 ## 구독 상품
 
