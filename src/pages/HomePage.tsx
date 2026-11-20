@@ -5,6 +5,7 @@ import { PillButton, TopicLabel } from '../components/v2/Controls'
 import { Screen } from '../components/v2/Screen'
 import { LineIcon, type LineIconName } from '../components/ui/LineIcon'
 import { RequestState } from '../components/ui/RequestState'
+import { BottomNavigation } from '../components/layout/BottomNavigation'
 import { topicLabel } from '../constants/topics'
 import type { FeedItem, FeedResponse } from '../types/news'
 import { relativeTime } from '../utils/date'
@@ -40,7 +41,7 @@ function EmptyState({ icon, title, body, action }: { icon: LineIconName; title: 
 }
 
 /** A2 홈: today's stories ranked by match rate. */
-export function HomePage({ member, onArticle, onInterests, onProfile, onChats, onLogin }: { member: boolean; onArticle: (id: string) => void; onInterests: () => void; onProfile: () => void; onChats: () => void; onLogin: () => void }) {
+export function HomePage({ member, onArticle, onInterests, onProfile, onChats, onLogin, onExplore, onMyPage }: { member: boolean; onArticle: (id: string) => void; onInterests: () => void; onProfile: () => void; onChats: () => void; onLogin: () => void; onExplore: () => void; onMyPage: () => void }) {
   const [feed, setFeed] = useState<FeedResponse>()
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
@@ -83,7 +84,8 @@ export function HomePage({ member, onArticle, onInterests, onProfile, onChats, o
     </section>
   </>
 
-  return <Screen pageTitle="홈" contentClassName="px-5" overlay={<ChatFab onClick={onChats} label="소식이 대화 기록" />}>
+  return <Screen pageTitle="홈" contentClassName="px-5" overlay={<ChatFab aboveNavigation onClick={onChats} label="소식이 대화 기록" />}
+    footer={<BottomNavigation active="home" onHome={() => document.querySelector('main')?.scrollTo({ top: 0 })} onExplore={onExplore} onMyPage={onMyPage} />}>
     <div className="flex h-14 items-center justify-between">
       <img src="/images/home/aleum-logo.svg" alt="aleum" width="96" height="32" className="h-7 w-auto" />
       {!member && <button type="button" onClick={onLogin} className="cursor-pointer text-[13px] font-medium text-secondary underline">로그인</button>}

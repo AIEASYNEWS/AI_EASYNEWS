@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { adminServices } from './firebase.js'
 import { getConfig } from './config.js'
 import { AppError } from './errors.js'
+import { newsIdentity } from './newsCatalog.js'
 
 export const usageDay = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
 const userRef = uid => adminServices().db.collection('users').doc(uid)
@@ -200,7 +201,7 @@ export async function getHistory(uid) {
   const snapshot = await userRef(uid).collection('articles').orderBy('savedAt', 'desc').limit(30).get()
   return snapshot.docs.map(document => {
     const { id, title, easyTitle, topicId, publisher, sourceUrl, publishedAt, excerpt, imageUrl } = document.data()
-    return { id, title: easyTitle || title, topicId, publisher, sourceUrl, publishedAt, excerpt, ...(imageUrl ? { imageUrl } : {}) }
+    return { id, newsKey: newsIdentity({ sourceUrl }).newsKey, title: easyTitle || title, topicId, publisher, sourceUrl, publishedAt, excerpt, ...(imageUrl ? { imageUrl } : {}) }
   })
 }
 

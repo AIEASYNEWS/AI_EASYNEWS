@@ -1,4 +1,4 @@
-export type AppPage = 'home' | 'welcome' | 'login' | 'signup' | 'profile' | 'interests' | 'article' | 'chat' | 'chats' | 'subscription'
+export type AppPage = 'home' | 'welcome' | 'login' | 'signup' | 'profile' | 'interests' | 'article' | 'chat' | 'chats' | 'subscription' | 'explore' | 'my'
 
 export interface AppRoute {
   page: AppPage

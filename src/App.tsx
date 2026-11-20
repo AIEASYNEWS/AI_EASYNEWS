@@ -14,6 +14,8 @@ import { OnboardingPage } from './pages/OnboardingPage'
 import { emptyDraft, type ProfileDraft } from './utils/profileDraft'
 import { SplashPage } from './pages/SplashPage'
 import { SubscriptionPage } from './pages/SubscriptionPage'
+import { ExplorePage } from './pages/ExplorePage'
+import { MyPage } from './pages/MyPage'
 
 /** Loads the saved profile before showing an edit screen (A1-1 내 정보 / A1-2 관심 분야 수정). */
 function ProfileEditRoute({ kind, onBack, onSaved }: { kind: 'info' | 'interests'; onBack: () => void; onSaved: () => void }) {
@@ -70,8 +72,12 @@ export default function App() {
     onBack={back} onHistory={() => navigate('chats')} onArticle={() => navigate('article', { articleId: id })} />
   else if (route.page === 'chats') content = <ChatHistoryPage key={user?.uid} onBack={back} onOpen={roomId => navigate('chat', { articleId: roomId })} />
   else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={back} onActivated={() => replace('home')} />
+  else if (route.page === 'explore') content = <ExplorePage onHome={() => replace('home')} onMyPage={() => replace('my')} onArticle={article => navigate('article', { articleId: article.newsKey ?? article.id })} />
+  else if (route.page === 'my') content = <MyPage key={user?.uid} viewer={member ? 'member' : 'guest'} quotaText="무제한" onHome={() => replace('home')} onExplore={() => replace('explore')}
+    onSettings={() => navigate('interests')} onLogin={() => navigate('login')} onPlan={() => navigate('subscription')} onArticle={article => navigate('article', { articleId: article.newsKey ?? article.id })} />
   else content = <HomePage key={user?.uid} member={member} onArticle={articleId => navigate('article', { articleId })} onInterests={() => navigate('interests')}
-    onProfile={() => navigate(member ? 'profile' : 'signup')} onChats={() => navigate('chats')} onLogin={() => navigate('login')} />
+    onProfile={() => navigate(member ? 'profile' : 'signup')} onChats={() => navigate('chats')} onLogin={() => navigate('login')}
+    onExplore={() => replace('explore')} onMyPage={() => replace('my')} />
 
   return <>
     {usingEmulators && <div className="fixed top-0 left-0 z-40 bg-surface px-2 py-1 text-[10px] text-muted">Firebase 로컬 테스트</div>}
