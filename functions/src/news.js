@@ -4,8 +4,9 @@ import { articleId, inferTopic, cleanText } from './articles.js'
 import { safeFetchText, parsePublicUrl } from './safeFetch.js'
 import { getConfig } from './config.js'
 import { AppError } from './errors.js'
+import { readStoredNews, storeNewsCandidates } from './newsCatalog.js'
+import { adminServices } from './firebase.js'
 
-const cache = new Map()
 const topicQueries = {
   economy: '(economy OR finance OR stock OR inflation)', politics: '(president OR election OR parliament)',
   society: '(society OR police OR education)', technology: '(technology OR science OR semiconductor)',
@@ -35,15 +36,6 @@ function itemFrom({ title, url, date, image, description, category }) {
   } catch { return null }
 }
 
-async function cached(key, loader) {
-  const current = cache.get(key)
-  if (current && current.expires > Date.now()) return current.value
-  const promise = loader().catch(error => { const entry = cache.get(key); if (entry) entry.expires = Date.now() + 30_000; throw error })
-  cache.set(key, { value: promise, expires: Date.now() + 5 * 60_000 })
-  if (cache.size > 100) cache.delete(cache.keys().next().value)
-  return promise
-}
-
 async function fromNaver(query, topic, { signal, sort = 'date' } = {}) {
   const url = new URL('https://openapi.naver.com/v1/search/news.json')
   url.search = new URLSearchParams({ query: query || topicLabels[topic] || '뉴스', display: '100', sort }).toString()
@@ -55,7 +47,8 @@ async function fromNaver(query, topic, { signal, sort = 'date' } = {}) {
 
 export async function getNaverHubNews(topic, { clientId, clientSecret }, limit = 10) {
   const url = new URL('https://naverapihub.apigw.ntruss.com/search/v1/news')
-  url.search = new URLSearchParams({ query: naverHubQueries[topic] || topicLabels[topic], display: String(limit), sort: 'date', format: 'json' }).toString()
+  const query = naverHubQueries[topic] || topicLabels[topic]
+  url.search = new URLSearchParams({ query, display: String(limit), sort: 'date', format: 'json' }).toString()
   const unavailable = new AppError('NEWS_UNAVAILABLE', '네이버 뉴스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
   let response
   try {
@@ -132,27 +125,31 @@ async function fromConfiguredRss({ signal } = {}) {
   return items
 }
 
-/** RSS는 이용 권한을 확인한 주소를 NEWS_RSS_FEEDS에 명시했을 때만 사용한다. */
-export async function getNews({ query = '', topic = '', topics = [], sort = 'latest', page = 1, limit = 24 } = {}) {
-  const naver = Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET)
-  const rss = getConfig().rssFeeds.length > 0
-  const key = naver ? `naver:${topic}:${query}` : rss ? 'rss' : `gdelt:${topic}`
-  let items
-  try { items = await cached(key, () => naver ? fromNaver(query, topic) : rss ? fromConfiguredRss() : fromGdelt(topic)) }
-  catch (error) { if (error instanceof AppError) throw error; throw new AppError('NEWS_UNAVAILABLE', '뉴스 제공 서비스에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.', 503) }
-  const uniqueItems = new Map()
-  for (const item of items) if (!uniqueItems.has(item.id)) uniqueItems.set(item.id, item)
-  items = [...uniqueItems.values()]
-  if (!naver && query.trim()) {
-    const terms = query.toLocaleLowerCase('ko').split(/\s+/).filter(Boolean)
-    items = items.filter(item => terms.every(term => `${item.title} ${item.publisher} ${item.excerpt}`.toLocaleLowerCase('ko').includes(term)))
-  }
-  if (topic && rss) items = items.filter(item => item.topicId === topic)
-  if (topics.length) items = items.filter(item => topics.includes(item.topicId))
-  items.sort((a, b) => ((Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0)) * (sort === 'oldest' ? -1 : 1))
-  const pageSize = Math.min(250, Math.max(1, limit))
-  const offset = (Math.max(1, Number(page) || 1) - 1) * pageSize
-  return { items: items.slice(offset, offset + pageSize), total: items.length, hasMore: offset + pageSize < items.length, source: naver ? 'naver' : rss ? 'rss' : 'gdelt' }
+export async function collectNews(db = adminServices().db) {
+  const { naverHub } = getConfig()
+  if (!naverHub) throw new AppError('NEWS_NOT_CONFIGURED', '네이버 뉴스 검색 API 연결 설정을 확인해 주세요.', 503)
+  const observedAt = Date.now()
+  const topics = Object.keys(topicLabels)
+  const results = await Promise.allSettled(topics.map(topic => getNaverHubNews(topic, naverHub, 35)))
+  const feeds = results.filter(result => result.status === 'fulfilled')
+  if (!feeds.length) throw results[0].reason
+  const failedTopics = topics.filter((_, index) => results[index].status === 'rejected')
+  if (failedTopics.length) console.warn('News collection failed for topics:', failedTopics.join(', '))
+  await storeNewsCandidates(db, feeds.flatMap(feed => feed.value.items), observedAt)
+}
+
+export async function getExploreNews({ query = '', topic = '', sort = 'latest', page = 1 } = {}, load = readStoredNews) {
+  const { items } = await load()
+  const normalize = value => value.normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, '')
+  const terms = query.trim().split(/\s+/).filter(Boolean).map(normalize)
+  const matches = items.filter(item => {
+    if (topic && item.topicId !== topic) return false
+    const text = normalize([item.title, item.publisher, item.excerpt].join(' '))
+    return terms.every(term => text.includes(term))
+  })
+  if (sort === 'oldest') matches.reverse()
+  const offset = (page - 1) * 24
+  return { items: matches.slice(offset, offset + 24), total: matches.length, hasMore: offset + 24 < matches.length, source: 'catalog' }
 }
 
 /** Normalize known publisher subdomains without confusing unrelated .co.kr domains. */

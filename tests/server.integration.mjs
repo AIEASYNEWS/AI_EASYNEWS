@@ -96,7 +96,7 @@ test('unsupported URL schemes are rejected before network access', async () => {
   assert.equal(result.data.code, 'INVALID_URL')
 })
 
-test('members can save notification settings without losing topics; guests cannot alter them', async () => {
+test('guests and members can manage their interest topic notification settings', async () => {
   const name = 'news_' + Date.now().toString(36)
   const member = (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', {
     email: name + '@id.easynews.invalid', password: 'reader1234', returnSecureToken: true,
@@ -104,7 +104,7 @@ test('members can save notification settings without losing topics; guests canno
   const token = member.idToken
   assert.ok(token)
   assert.equal((await request(port, '/api/auth/username?id=' + name)).data.available, false)
-  assert.equal((await request(port, '/api/notification-settings', { enabled: true }, account.idToken, 'PUT')).status, 403)
+  assert.equal((await request(port, '/api/notification-settings', { enabled: true }, account.idToken, 'PUT')).status, 200)
   assert.equal((await request(port, '/api/profile', { topicIds: ['health'], completed: true }, token, 'PUT')).status, 200)
   assert.equal((await request(port, '/api/notification-settings', { enabled: false }, token, 'PUT')).status, 200)
   assert.deepEqual((await request(port, '/api/notification-settings', undefined, token)).data, { enabled: false, topicIds: ['health'] })
@@ -131,4 +131,24 @@ test('conversion streams actual stages, saves the result and refunds provider fa
   assert.match(result.data, /"comparisonStatus":"no-candidates"/)
   assert.equal((await getQuota(second.localId)).remaining, null)
   assert.equal((await request(port, `/api/articles/${fixtureArticle.id}`, undefined, token)).data.easyTitle, '쉬운 제목')
+})
+
+test('a deferred conversion can be read immediately and comparison resumes from the saved article', async () => {
+  const token = second.idToken
+  const body = { sourceUrl: fixtureArticle.sourceUrl, deferComparison: true }
+  const convert = async () => {
+    const result = await request(port, '/api/convert', body, token)
+    const data = result.data.match(/event: result\ndata: ([^\n]+)/)
+    assert.ok(data)
+    return JSON.parse(data[1])
+  }
+  const reading = await convert()
+  assert.equal(reading.comparisonStatus, 'pending')
+  assert.deepEqual(reading.easyParagraphs, ['쉬운 본문'])
+  const path = `/api/articles/${reading.id}/comparison`
+  const completed = await request(port, path, {}, token)
+  assert.equal(completed.data.comparisonStatus, 'no-candidates')
+  const cached = await convert()
+  assert.equal(cached.comparisonPlan.revision, reading.comparisonPlan.revision)
+  assert.equal(cached.comparisonStatus, completed.data.comparisonStatus)
 })

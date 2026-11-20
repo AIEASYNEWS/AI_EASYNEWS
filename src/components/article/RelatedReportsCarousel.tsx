@@ -105,22 +105,32 @@ export function RelatedReportsCarousel({ reports, onRelated }: RelatedReportsCar
         className={'relative -mx-5 flex gap-3 overflow-x-auto overscroll-x-contain scroll-px-5 px-5 [scrollbar-width:none] ' + (dragging ? 'cursor-grabbing' : 'snap-x snap-mandatory cursor-grab')}
       >
         {reports.map((report, index) => (
-          <button
+          <article
             key={report.id}
             data-report-card
-            type="button"
-            aria-label={`${index + 1}번 비교 기사, ${report.relation === 'opposing' ? '반대 주장을 다룬 보도, ' : ''}${report.koreanTitle || report.title}`}
-            onClick={() => onRelated(report)}
-            className="flex h-[229px] w-[280px] max-w-[calc(100%_-_16px)] shrink-0 cursor-pointer snap-start select-none flex-col items-start gap-2 rounded-xl border border-line p-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2"
+            aria-label={`${index + 1}번 비교 기사, ${report.publisher}`}
+            className="flex w-[min(360px,92%)] shrink-0 snap-start flex-col gap-3 rounded-xl border border-line p-4 break-keep [overflow-wrap:anywhere]"
           >
-            <span className={'rounded px-2 text-xs leading-6 font-medium text-secondary ' + (report.kind === 'same-event' ? 'bg-surface' : 'border border-[#d1d8e0]')}>
-              {report.kind === 'same-event' ? '같은 사건 보도' : '다른 관점'}
-            </span>
-            <p className="w-full truncate text-xs leading-[18px] text-[#8b95a1]">{report.publisher} · {formatDate(report.publishedAt)}</p>
-            <h3 className="line-clamp-2 text-base leading-6 font-bold">{report.koreanTitle || report.title}</h3>
-            <p className="line-clamp-2 text-sm leading-[21px] text-muted">강조한 내용: {report.viewpoint || report.focus}</p>
-            <span className="mt-auto flex w-full items-center justify-center gap-1 border-t border-line pt-2 text-sm font-medium text-secondary">자세히 보기 <img src="/images/ui/next.svg" width="16" height="16" alt="" /></span>
-          </button>
+            <p className="text-xs leading-[18px] text-muted">{report.publisher} · {formatDate(report.publishedAt)}</p>
+            <h3 className="text-base leading-6 font-bold text-[#1e6beb]">{report.focus || report.viewpoint || report.koreanTitle || report.title}</h3>
+            {report.summary?.length ? (
+              <div className="space-y-1 text-sm leading-[21px]">
+                <h4 className="font-semibold">기사 요약</h4>
+                {report.summary.map((sentence, i) => <p key={i}>{sentence}</p>)}
+              </div>
+            ) : report.relatedEvidence && (
+              <div className="text-sm leading-[21px]">
+                <h4 className="font-semibold">기사 속 문장</h4>
+                <blockquote className="mt-1">{report.relatedEvidence}</blockquote>
+              </div>
+            )}
+            <div className="mt-auto border-t border-line pt-3 text-xs text-secondary">
+              {report.sourceUrl ? <>
+                <button type="button" onClick={() => onRelated(report)} className="block cursor-pointer text-left leading-5 underline">{report.koreanTitle || report.title}</button>
+                <a href={report.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-medium underline">{report.publisher} 원문 보기</a>
+              </> : <p>{report.koreanTitle || report.title}</p>}
+            </div>
+          </article>
         ))}
       </div>
       {reports.length > 1 && <div className="mt-2 flex justify-center" aria-label="비교 기사 이동">

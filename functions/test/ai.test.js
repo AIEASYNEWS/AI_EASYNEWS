@@ -42,6 +42,7 @@ test('rewrite retains competing attributed passages from the original without ex
 
 test('comparison retains only distinct perspectives grounded in both article bodies', async context => {
   const valid = { id: 'real', focus: '원문은 금리 유지, 비교 기사는 대출 부담을 설명해요.', kind: 'different-perspective', viewpoint: '대출자 영향', originalEvidence: article.originalParagraphs[0], relatedEvidence: '대출자들은 이자 부담이 계속된다고 설명했습니다.' }
+  valid.summary = ['이 기사는 대출자들의 말을 전했어요.', '대출자들은 이자가 여전히 부담된다고 해요.']
   const related = { ...article, id: 'real', publisher: '실제 언론사', sourceUrl: 'https://example.org/news', originalParagraphs: [valid.relatedEvidence] }
   context.mock.method(globalThis, 'fetch', async (_url, init) => {
     assert.match(init.body, /같은 사실·논조를 반복/)
@@ -55,12 +56,14 @@ test('comparison retains only distinct perspectives grounded in both article bod
   assert.deepEqual(result.reports.map(report => report.id), ['real'])
   assert.equal(result.reports[0].sourceUrl, related.sourceUrl)
   assert.equal(result.reports[0].relatedEvidence, valid.relatedEvidence)
+  assert.deepEqual(result.reports[0].summary, valid.summary)
   assert.equal(result.comparison, valid.focus)
   assert.doesNotMatch(result.comparison, /제공되지 않은|중복/)
 })
 
 test('same framing, same publisher and fabricated evidence cannot become an alternative viewpoint', async context => {
   const report = { focus: '관점 차이', kind: 'different-perspective', viewpoint: '대응 효과', originalEvidence: article.originalParagraphs[0], relatedEvidence: '대출자들은 이자 부담이 계속된다고 설명했습니다.' }
+  report.summary = ['대출자들이 이자 부담을 호소했어요.', '금리가 그대로라 부담이 계속된다고 말했어요.']
   const related = [
     { ...article, id: 'same-source', sourceUrl: 'https://www.example.com/other' },
     { ...article, id: 'fabricated', sourceUrl: 'https://example.net/other' },

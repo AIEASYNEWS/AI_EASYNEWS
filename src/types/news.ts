@@ -7,6 +7,7 @@ export interface RelatedReport {
   publisher: string
   title: string
   focus: string
+  summary?: string[]
   kind: 'same-event' | 'different-perspective'
   relation?: 'opposing' | 'alternative'
   koreanTitle?: string
@@ -39,6 +40,7 @@ export interface NewsArticle extends NewsItem {
   reports: RelatedReport[]
   originalFocus?: string
   sourcePositions?: { speaker: string; evidence: string }[]
-  comparisonStatus?: 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'evidence-unverified' | 'analysis-failed' | 'timeout'
+  comparisonStatus?: 'pending' | 'ready' | 'partial' | 'search-unavailable' | 'no-candidates' | 'read-failed' | 'no-distinct-perspective' | 'evidence-unverified' | 'analysis-failed' | 'timeout'
+  comparisonPlan?: { revision: string }
   comparisonNotice?: string
 }

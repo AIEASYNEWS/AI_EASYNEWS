@@ -19,6 +19,7 @@ const comparisonSchema = z.object({
   originalFocus: z.string().max(800).default(''),
   reports: z.array(z.object({
     id: z.string().max(100), focus: z.string().min(1).max(800),
+    summary: z.array(z.string().trim().min(1).max(200).regex(/[가-힣]/u)).min(2).max(3),
     kind: z.enum(['same-event', 'different-perspective']),
     relation: z.enum(['opposing', 'alternative']).default('alternative'),
     koreanTitle: z.string().trim().max(300).optional(),
@@ -102,8 +103,10 @@ export async function compareArticles(original, related, signal) {
 4. 원문과 비교 기사의 실제 문장을 각각 originalEvidence와 relatedEvidence에 8~240자 그대로 인용하세요. 말줄임표를 추가하거나 문장을 고치지 마세요. 두 인용문이 뒷받침하는 구체적인 차이를 focus에 쉬운 말로 설명하고 viewpoint에 짧은 관점 이름을 쓰세요.
 5. 모든 후보에서 먼저 동일한 쟁점에 대해 원문의 주된 주장을 직접 반박하거나 양립하기 어려운 주장을 전하는 기사를 찾아 relation을 opposing으로 표시하세요. 두 인용문에서 각각 누가 어떤 주장을 했는지 focus에 밝히세요. 당사자의 주장을 언론사 자체의 의견이나 법원의 판결로 바꾸지 마세요. 같은 주장을 반복 인용한 두 기사, 별개 혐의나 다른 심급의 결론은 그 자체로 반대 주장이 아닙니다.
 6. 다음으로 다른 이해관계자의 의견이나 근거·해석·영향에 대한 별도 접근을 보도한 기사는 alternative로 표시하세요. 원문과 같은 언론사·복제 보도·중복 관점은 제외하고 반대 주장 우선으로 언론사당 최대 1개, 전체 최대 4개를 선택하세요. 근거가 없으면 빈 배열을 쓰세요.
-기사 언어가 서로 달라도 같은 기준으로 비교하세요. originalFocus, focus, viewpoint, koreanTitle은 쉬운 한국어로 쓰고 두 evidence 인용문은 검증을 위해 각 기사 원래 언어 그대로 복사하세요.
-JSON만 반환하세요: {"originalFocus":"원문이 주로 강조하는 점","reports":[{"id":"제공된 기사 id","koreanTitle":"비교 기사 제목의 한국어 번역","focus":"두 기사에서 누가 무엇을 다르게 주장하거나 강조했는지","kind":"different-perspective","relation":"opposing 또는 alternative","viewpoint":"구체적인 관점","originalEvidence":"원문에서 그대로 발췌","relatedEvidence":"비교 본문에서 그대로 발췌"}]}.
+7. focus는 비교 언론사 이름으로 시작하는 한 문장으로 쓰세요. 원 기사가 강조한 내용과 비교 기사가 강조한 내용을 모두 구체적으로 밝히세요. 예시 형식은 “○○ 기사는 원 기사가 다룬 …에서 한발 더 나아가 …에 주목했어요.”입니다. 관계에 맞게 자연스럽게 쓰고 인용된 주장은 발언자에게 돌리세요.
+8. summary는 해당 비교 기사 본문만 바탕으로 핵심 내용을 쉬운 한국어 2~3문장으로 요약하세요. 항목당 짧은 한 문장을 쓰고, 제목이나 focus를 반복하지 말고 누가 무엇을 했거나 말했는지와 핵심 근거를 전하세요.
+기사 언어가 서로 달라도 같은 기준으로 비교하세요. originalFocus, focus, summary, viewpoint, koreanTitle은 쉬운 한국어로 쓰고 두 evidence 인용문은 검증을 위해 각 기사 원래 언어 그대로 복사하세요.
+JSON만 반환하세요: {"originalFocus":"원문이 주로 강조하는 점","reports":[{"id":"제공된 기사 id","koreanTitle":"비교 기사 제목의 한국어 번역","focus":"언론사 이름과 두 기사의 구체적인 차이를 담은 한 문장","summary":["비교 기사의 핵심 내용","그 내용을 설명하는 세부 사실"],"kind":"different-perspective","relation":"opposing 또는 alternative","viewpoint":"구체적인 관점","originalEvidence":"원문에서 그대로 발췌","relatedEvidence":"비교 본문에서 그대로 발췌"}]}.
 <original>${JSON.stringify({ title: original.title, publisher: original.publisher, publishedAt: original.publishedAt, text: original.originalParagraphs.join('\n').slice(0, 10_000) })}</original>
 <related>${JSON.stringify(related.map(item => ({ id: item.id, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt, text: item.originalParagraphs.join('\n').slice(0, 6000) })))}</related>`
   const result = parseAiJson(await complete(systemInstruction, prompt, { signal, maxTokens: 3500 }), comparisonSchema)

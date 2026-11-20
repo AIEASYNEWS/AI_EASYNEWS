@@ -9,10 +9,19 @@ export function useRecommendedNews(enabled: boolean, preferencesKey: string) {
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
-    apiRequest<RecommendedNewsResponse>('/recommendations', { signal: controller.signal }).then(data => {
-      if (!controller.signal.aborted) setState({ key, data })
-    }).catch(error => { if (!controller.signal.aborted) setState({ key, error: error.message }) })
-    return () => controller.abort()
+    let timer: ReturnType<typeof setTimeout>
+    async function load() {
+      try {
+        const data = await apiRequest<RecommendedNewsResponse>('/recommendations', { signal: controller.signal })
+        if (controller.signal.aborted) return
+        setState({ key, data })
+        if (!data.items.length) timer = setTimeout(load, data.waitingForCollection ? 30_000 : 5 * 60_000)
+      } catch (error) {
+        if (!controller.signal.aborted) setState({ key, error: (error as Error).message })
+      }
+    }
+    void load()
+    return () => { clearTimeout(timer); controller.abort() }
   }, [key, enabled])
   return { data: state.key === key ? state.data : undefined, error: state.key === key ? state.error : undefined, loading: enabled && state.key !== key, retry: () => setVersion(value => value + 1) }
 }
