@@ -17,7 +17,7 @@ export function PageLayout({ title, children, header, onBack, footer, contentCla
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    document.title = `${title} | 쉬운말 뉴스`
+    document.title = `${title} | NUTORI`
     mainRef.current?.focus({ preventScroll: true })
   }, [title])
 
