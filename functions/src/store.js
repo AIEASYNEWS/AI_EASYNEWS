@@ -7,14 +7,149 @@ import { AppError } from './errors.js'
 export const usageDay = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
 const userRef = uid => adminServices().db.collection('users').doc(uid)
 
+const profileFields = ['topicIds', 'customKeywords', 'ageGroup', 'gender', 'occupation', 'occupationOther', 'nickname', 'privacyConsent', 'completed', 'keywordWeights', 'notificationsEnabled']
+export const nicknameKey = nickname => nickname.normalize('NFKC').toLocaleLowerCase('ko')
+
 export async function getProfile(uid) {
   const snapshot = await userRef(uid).get()
-  return { topicIds: [], completed: false, ...snapshot.data() }
+  const data = snapshot.data() || {}
+  return { topicIds: [], customKeywords: [], completed: false, keywordWeights: {}, ...Object.fromEntries(profileFields.filter(key => key in data).map(key => [key, data[key]])) }
 }
 
+/** Nicknames are unique across accounts; a reservation document is swapped atomically with the profile. */
 export async function saveProfile(uid, profile) {
-  await userRef(uid).set({ ...profile, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+  const db = adminServices().db
+  if (profile.nickname === undefined) {
+    await userRef(uid).set({ ...profile, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+    return profile
+  }
+  const key = nicknameKey(profile.nickname)
+  await db.runTransaction(async transaction => {
+    const [user, reservation] = await Promise.all([transaction.get(userRef(uid)), transaction.get(db.collection('nicknames').doc(key))])
+    if (reservation.exists && reservation.data().uid !== uid) throw new AppError('NICKNAME_TAKEN', '이미 쓰고 있어요. 다른 닉네임을 적어 주세요.', 409)
+    const previous = user.data()?.nickname
+    if (previous && nicknameKey(previous) !== key) transaction.delete(db.collection('nicknames').doc(nicknameKey(previous)))
+    transaction.set(db.collection('nicknames').doc(key), { uid, updatedAt: FieldValue.serverTimestamp() })
+    transaction.set(userRef(uid), { ...profile, updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+  })
   return profile
+}
+
+export async function nicknameAvailable(nickname, uid) {
+  const snapshot = await adminServices().db.collection('nicknames').doc(nicknameKey(nickname)).get()
+  return !snapshot.exists || snapshot.data().uid === uid
+}
+
+export async function getFeedbackMap(uid) {
+  const snapshot = await userRef(uid).collection('feedback').orderBy('updatedAt', 'desc').limit(300).get()
+  return Object.fromEntries(snapshot.docs.map(document => [document.id, document.data().value]))
+}
+
+/** Stores one answer per article and moves the article's topic/keyword weights by one step (bounded to ±3). */
+export async function saveFeedback(uid, id, value, keys) {
+  const db = adminServices().db
+  await db.runTransaction(async transaction => {
+    const feedbackRef = userRef(uid).collection('feedback').doc(id)
+    const [user, previous] = await Promise.all([transaction.get(userRef(uid)), transaction.get(feedbackRef)])
+    const weights = { ...user.data()?.keywordWeights }
+    const step = direction => { for (const key of keys) weights[key] = Math.max(-3, Math.min(3, (weights[key] || 0) + direction)) }
+    const prior = previous.data()?.value
+    if (prior === value) return
+    if (prior) step(prior === 'good' ? -1 : 1)
+    step(value === 'good' ? 1 : -1)
+    for (const key of Object.keys(weights)) if (!weights[key]) delete weights[key]
+    transaction.set(feedbackRef, { value, updatedAt: FieldValue.serverTimestamp() })
+    transaction.set(userRef(uid), { keywordWeights: weights }, { merge: true })
+  })
+  return { value }
+}
+
+export async function getArticleState(uid, id) {
+  const [feedback, bookmark] = await Promise.all([userRef(uid).collection('feedback').doc(id).get(), userRef(uid).collection('bookmarks').doc(id).get()])
+  return { feedback: feedback.data()?.value || null, bookmarked: bookmark.exists }
+}
+
+export async function setBookmark(uid, id, saved) {
+  const ref = userRef(uid).collection('bookmarks').doc(id)
+  if (saved) await ref.set({ savedAt: FieldValue.serverTimestamp() })
+  else await ref.delete()
+  return { bookmarked: saved }
+}
+
+export async function getCachedReason(uid, id, profileKey) {
+  const snapshot = await userRef(uid).collection('reasons').doc(id).get()
+  return snapshot.exists && snapshot.data().profileKey === profileKey ? snapshot.data().text : null
+}
+
+export async function saveReason(uid, id, profileKey, text) {
+  await userRef(uid).collection('reasons').doc(id).set({ text, profileKey, createdAt: FieldValue.serverTimestamp() })
+}
+
+export async function findConvertedArticle(uid, id) {
+  return getArticle(uid, id).catch(error => { if (error.code === 'ARTICLE_NOT_FOUND') return null; throw error })
+}
+
+const roomRef = (uid, id) => userRef(uid).collection('chatRooms').doc(id)
+const MESSAGE_LIMIT = 100
+const publicRoom = ({ context: _context, createdAt, updatedAt, ...room }) => ({ ...room, createdAt: millis(createdAt), updatedAt: millis(updatedAt) })
+const millis = value => typeof value?.toMillis === 'function' ? value.toMillis() : value || 0
+
+export async function listChatRooms(uid) {
+  const snapshot = await userRef(uid).collection('chatRooms').orderBy('updatedAt', 'desc').limit(50).get()
+  return snapshot.docs.map(document => publicRoom(document.data()))
+}
+
+export async function getChatRoom(uid, id, { withContext = false } = {}) {
+  const snapshot = await roomRef(uid, id).get()
+  if (!snapshot.exists) return { room: null, messages: [] }
+  const messages = await roomRef(uid, id).collection('messages').orderBy('createdAt', 'asc').limitToLast(MESSAGE_LIMIT).get()
+  return {
+    room: withContext ? { ...publicRoom(snapshot.data()), context: snapshot.data().context } : publicRoom(snapshot.data()),
+    messages: messages.docs.map(document => ({ id: document.id, ...document.data() })),
+  }
+}
+
+/** Appends both sides of one exchange; the room is created by its first message. */
+export async function appendChatExchange(uid, id, roomData, userMessage, reply) {
+  const db = adminServices().db
+  const now = Date.now()
+  const room = roomRef(uid, id)
+  const batch = db.batch()
+  const snapshot = await room.get()
+  const created = !snapshot.exists
+  const userDoc = { role: 'user', text: userMessage.text, ...(userMessage.quote ? { quote: userMessage.quote } : {}), createdAt: now }
+  const replyDoc = { role: 'assistant', text: reply.answer, ...(reply.offTopic ? { offTopic: true } : {}), createdAt: now + 1 }
+  batch.set(room, {
+    ...(created ? { ...roomData, createdAt: now } : {}),
+    updatedAt: now, lastMessage: { role: 'assistant', text: reply.answer.slice(0, 120) },
+  }, { merge: true })
+  const userRefDoc = room.collection('messages').doc()
+  const replyRefDoc = room.collection('messages').doc()
+  batch.set(userRefDoc, userDoc)
+  batch.set(replyRefDoc, replyDoc)
+  await batch.commit()
+  // Trim the oldest messages beyond the per-room limit.
+  const overflow = await room.collection('messages').orderBy('createdAt', 'desc').offset(MESSAGE_LIMIT).limit(50).get()
+  if (!overflow.empty) {
+    const cleanup = db.batch()
+    overflow.docs.forEach(document => cleanup.delete(document.ref))
+    await cleanup.commit()
+  }
+  return { created, messages: [{ id: userRefDoc.id, ...userDoc }, { id: replyRefDoc.id, ...replyDoc }] }
+}
+
+export async function deleteChatRoom(uid, id) {
+  const db = adminServices().db
+  const room = roomRef(uid, id)
+  for (;;) {
+    const page = await room.collection('messages').limit(200).get()
+    if (page.empty) break
+    const batch = db.batch()
+    page.docs.forEach(document => batch.delete(document.ref))
+    await batch.commit()
+  }
+  await room.delete()
+  return { deleted: true }
 }
 
 export async function getQuota(uid) {
@@ -59,18 +194,6 @@ export async function getArticle(uid, id) {
   if (!snapshot.exists) throw new AppError('ARTICLE_NOT_FOUND', '저장된 기사를 찾지 못했어요.', 404)
   const { savedAt: _savedAt, ...article } = snapshot.data()
   return article
-}
-
-export async function saveComparison(uid, article, comparison) {
-  const ref = userRef(uid).collection('articles').doc(article.id)
-  return adminServices().db.runTransaction(async tx => {
-    const snapshot = await tx.get(ref)
-    if (!snapshot.exists) throw new AppError('ARTICLE_NOT_FOUND', '저장된 기사를 찾지 못했어요.', 404)
-    const { savedAt: _savedAt, ...stored } = snapshot.data()
-    if (stored.comparisonStatus !== 'pending' || stored.comparisonPlan?.revision !== article.comparisonPlan.revision) return stored
-    tx.update(ref, comparison)
-    return { ...stored, ...comparison }
-  })
 }
 
 export async function getHistory(uid) {

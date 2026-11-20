@@ -1,7 +1,12 @@
 rules_version = '2';
 // Private data is written ONLY through the API using Admin SDK with Zod validation.
-// users/{uid}: topicIds (unique enum strings, <=7), completed (bool), updatedAt (timestamp).
+// users/{uid}: topicIds (unique enum strings, <=9), customKeywords (<=10), ageGroup, gender, occupation,
+//   occupationOther, nickname, privacyConsent, keywordWeights (server-computed feedback weights), completed, updatedAt.
 // users/{uid}/articles/{id}: extracted article + validated AI result, savedAt (timestamp).
+// users/{uid}/feedback|bookmarks|reasons/{newsKey}: match feedback, saved stories, cached personal reasons.
+// users/{uid}/chatRooms/{newsKey} (+ /messages): 소식이 article chat rooms, server only.
+// nicknames/{normalized}: uid owning a nickname (uniqueness), server only.
+// newsArticles/{newsKey}: collected catalog with AI matching tags, server only.
 // users/{uid}/usage/{day}: count (int), pending (lease id -> expiry millis), server only.
 // users/{uid}/questionUsage/{day}: count (int), server only.
 // users/{uid}/notificationReads/{id}: readAt (timestamp), server only.

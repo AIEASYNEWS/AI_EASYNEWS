@@ -1,130 +1,83 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getQuota } from './apis/news'
-import { auth, usingEmulators } from './apis/firebase'
+import { getProfile } from './apis/profile'
+import { usingEmulators } from './apis/firebase'
 import { ConversionLimitDialog } from './components/home/ConversionLimitDialog'
-import { NotificationsPage } from './pages/NotificationsPage'
-import { NotificationSettingsPage } from './pages/NotificationSettingsPage'
-import { SubscriptionPage } from './pages/SubscriptionPage'
-import { SplashPage } from './pages/SplashPage'
-import { Button } from './components/ui/Button'
-import { Dialog } from './components/ui/Dialog'
+import { Screen } from './components/v2/Screen'
+import { RequestState } from './components/ui/RequestState'
 import { useAppNavigation } from './hooks/useAppNavigation'
 import { useAuth } from './hooks/useAuth'
-import { ArticleRoutePage } from './pages/ArticleRoutePage'
-import { AuthPage } from './pages/AuthPage'
-import { ConversionPage } from './pages/ConversionPage'
-import { ExplorePage } from './pages/ExplorePage'
+import { LoginPage, ProfileEditPage, SignupPage } from './pages/AccountPages'
+import { ArticlePage } from './pages/ArticlePage'
+import { ChatHistoryPage, ChatPage } from './pages/ChatPages'
 import { HomePage } from './pages/HomePage'
-import { MyPage } from './pages/MyPage'
-import { InterestSettingsPage } from './pages/InterestSettingsPage'
-import { InterestTopicsPage } from './pages/InterestTopicsPage'
 import { OnboardingPage } from './pages/OnboardingPage'
-import type { NewsArticle, NewsItem } from './types/news'
+import { emptyDraft, type ProfileDraft } from './utils/profileDraft'
+import { SplashPage } from './pages/SplashPage'
+import { SubscriptionPage } from './pages/SubscriptionPage'
 
-function replaceHash(path: string) {
-  window.history.replaceState(null, '', `#${path}`)
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
+/** Loads the saved profile before showing an edit screen (A1-1 내 정보 / A1-2 관심 분야 수정). */
+function ProfileEditRoute({ kind, onBack, onSaved }: { kind: 'info' | 'interests'; onBack: () => void; onSaved: () => void }) {
+  const [initial, setInitial] = useState<ProfileDraft>()
+  const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    getProfile(controller.signal).then(profile => {
+      if (controller.signal.aborted) return
+      setInitial({ ...emptyDraft, ...profile, occupationOther: profile.occupationOther ?? '', privacyConsent: Boolean(profile.privacyConsent), nickname: profile.nickname ?? '', customKeywords: profile.customKeywords ?? [] })
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause.message) })
+    return () => controller.abort()
+  }, [version])
+  if (!initial) return <Screen pageTitle="내 정보" onBack={onBack}><RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /></Screen>
+  return <ProfileEditPage kind={kind} initial={initial} onBack={onBack} onSaved={onSaved} />
 }
 
 export default function App() {
-  const { route, navigate } = useAppNavigation()
+  const { route, navigate, replace } = useAppNavigation()
   const { user, loading } = useAuth()
   const member = Boolean(user && !user.isAnonymous)
   const [splash, setSplash] = useState(() => !window.location.hash)
+  const [limitOpen, setLimitOpen] = useState(false)
+  const [quote, setQuote] = useState<{ id: string; text: string }>()
   useEffect(() => {
     if (!splash || loading) return
     const timer = window.setTimeout(() => {
-      if (!window.location.hash) replaceHash(user ? '/home' : '/onboarding')
+      if (!window.location.hash) replace(user ? 'home' : 'welcome')
       setSplash(false)
     }, 900)
     return () => window.clearTimeout(timer)
-  }, [splash, loading, user])
-  const [sourceUrl, setSourceUrl] = useState('')
-  const [cached, setCached] = useState<{ uid?: string; article: NewsArticle }>()
-  const [failed, setFailed] = useState(false)
-  const [limitOpen, setLimitOpen] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [subscribedToast, setSubscribedToast] = useState(false)
-  useEffect(() => {
-    if (!subscribedToast) return
-    const timeout = window.setTimeout(() => setSubscribedToast(false), 5000)
-    return () => window.clearTimeout(timeout)
-  }, [subscribedToast])
-  const [quota, setQuota] = useState<{ uid?: string; remaining: number | null; unlimited?: boolean; subscriber?: boolean; error?: boolean }>()
-  const [quotaVersion, setQuotaVersion] = useState(0)
-  useEffect(() => {
-    if (loading || !window.location.hash || route.page === 'welcome' || route.page === 'signup' || route.page === 'login') return
-    let active = true
-    const refresh = () => getQuota().then(value => {
-      if (!active) return
-      setQuota({ uid: user?.uid, ...value })
-      if (value.subscriber && user && sessionStorage.getItem('easynews:checkout') === user.uid) {
-        sessionStorage.removeItem('easynews:checkout')
-        setSubscribedToast(true)
-        replaceHash('/home')
-      }
-    }).catch(() => { if (active) setQuota({ uid: user?.uid, remaining: null, error: true }) })
-    void refresh()
-    window.addEventListener('focus', refresh)
-    return () => { active = false; window.removeEventListener('focus', refresh) }
-  }, [user, member, loading, quotaVersion, route.page, splash])
-  const viewer = !member ? 'guest' : quota?.uid === user?.uid && quota?.subscriber ? 'subscriber' : 'member'
-  const quotaText = '무제한'
-  const initial = cached && cached.uid === user?.uid && cached.article.id === route.articleId ? cached.article : undefined
+  }, [splash, loading, user, replace])
 
-  function startConversion(url: string) {
-    setSourceUrl(url); setFailed(false)
-    navigate('converting', { sourceUrl: url })
-  }
-  // Stable handlers prevent a rendering update from restarting an in-flight conversion.
-  const conversionComplete = useCallback((article: NewsArticle) => {
-    setCached({ uid: auth?.currentUser?.uid, article }); setQuotaVersion(value => value + 1)
-    replaceHash(`/articles/read?id=${article.id}`)
-  }, [])
-  const conversionFailed = useCallback((error: Error) => {
-    if ('code' in error && error.code === 'QUOTA_EXCEEDED') {
-      const currentUser = auth?.currentUser
-      if (currentUser && !currentUser.isAnonymous) {
-        setQuotaVersion(value => value + 1)
-        replaceHash('/subscription?from=home')
-        return
-      }
-      setLimitOpen(true)
-    }
-    else { setFailed(true); setNotice(error.message) }
-    setQuotaVersion(value => value + 1)
-    replaceHash('/home')
-  }, [])
-  function previewArticle(article: NewsItem) { navigate('preview', { sourceUrl: article.sourceUrl }) }
-  function backFromArticle() {
+  const back = useCallback(() => {
     if (window.history.length > 1) window.history.back()
-    else navigate('home')
-  }
-  const myPage = () => navigate('my')
-  const notifications = () => navigate('notifications', { from: route.page })
-  const openPlan = () => { setLimitOpen(false); navigate('subscription', { from: route.page }) }
-  function demoSubscribed() {
-    if (!user) return
-    setQuota({ uid: user.uid, remaining: null, unlimited: true, subscriber: true })
-    setQuotaVersion(value => value + 1)
-    setSubscribedToast(true)
-    replaceHash('/home')
-  }
-  if (splash || (loading && ['my', 'notifications', 'notificationSettings', 'subscription', 'article'].includes(route.page))) return <SplashPage />
+    else replace('home')
+  }, [replace])
+  const openQuotaDialog = useCallback(() => setLimitOpen(true), [])
+  const clearQuote = useCallback(() => setQuote(undefined), [])
+
+  if (splash || (loading && route.page !== 'welcome')) return <SplashPage />
 
   let content
-  if (route.page === 'welcome') content = <OnboardingPage onLogin={() => navigate('login')} onSignUp={() => navigate('signup')} onContinueAsGuest={() => navigate('home')} />
-  else if (route.page === 'login' || route.page === 'signup') content = <AuthPage key={route.page} signup={route.page === 'signup'} onBack={() => navigate(route.from ?? 'welcome')} onSwitch={() => navigate(route.page === 'login' ? 'signup' : 'login', { from: route.from })} onSuccess={() => navigate(route.page === 'signup' ? 'topics' : route.from ?? 'home')} />
-  else if (route.page === 'topics') content = <InterestTopicsPage onComplete={() => navigate('home')} />
-  else if (route.page === 'interests') content = <InterestSettingsPage onBack={() => navigate(route.from ?? 'my')} />
-  else if (route.page === 'converting' && (route.sourceUrl || sourceUrl)) content = <ConversionPage sourceUrl={route.sourceUrl || sourceUrl} onSuccess={conversionComplete} onFailure={conversionFailed} onCancel={() => { navigate('home'); setQuotaVersion(value => value + 1) }} />
-  else if (route.page === 'preview' || route.page === 'article') content = <ArticleRoutePage key={`${route.page}:${route.articleId}:${route.sourceUrl}:${route.original}:${user?.uid}`} relatedTitle={route.relatedTitle} id={route.articleId} sourceUrl={route.sourceUrl} initial={initial} preview={route.page === 'preview'} original={route.original} onBack={backFromArticle} onConvert={startConversion} onOriginal={url => navigate('article', { sourceUrl: url, original: true })} onRelated={(report, title) => { if (report.sourceUrl) navigate('preview', { sourceUrl: report.sourceUrl, relatedTitle: title }) }} />
-  else if (route.page === 'notifications') content = <NotificationsPage key={user?.uid} onBack={() => navigate(route.from ?? 'home')} onArticle={previewArticle} />
-  else if (route.page === 'notificationSettings') content = <NotificationSettingsPage key={user?.uid} onBack={myPage} onTopics={() => navigate('interests', { from: 'notificationSettings' })} />
-  else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={() => route.from === 'article' ? backFromArticle() : navigate(route.from ?? 'my')} onActivated={demoSubscribed} />
-  else if (route.page === 'explore') content = <ExplorePage onHome={() => navigate('home')} onMyPage={myPage} onNotifications={notifications} onArticle={previewArticle} />
-  else if (['my', 'subscription'].includes(route.page)) content = <MyPage viewer={viewer} quotaText={quotaText} onAlerts={() => navigate('notificationSettings')} onPlan={openPlan} key={user?.uid} onHome={() => navigate('home')} onExplore={() => navigate('explore')} onSettings={() => navigate('interests')} onLogin={() => navigate('login')} onArticle={article => navigate('article', { articleId: article.id })} />
-  else content = <HomePage key={`${user?.uid}:${quotaVersion}`} viewer={viewer} sourceUrl={sourceUrl} onUrlChange={url => { setSourceUrl(url); setFailed(false) }} quotaText={quotaText} failed={failed} onConvert={startConversion} onSettings={() => navigate('interests')} onExplore={() => navigate('explore')} onMyPage={myPage} onNotifications={notifications} onArticle={previewArticle} />
+  const id = route.articleId
+  if (route.page === 'welcome') content = <OnboardingPage onLogin={() => navigate('login')} onSignUp={() => navigate('signup')} onContinueAsGuest={() => replace('home')} />
+  else if (route.page === 'login') content = <LoginPage onBack={back} onSignUp={() => replace('signup')} onSuccess={() => replace('home')} />
+  else if (route.page === 'signup') content = <SignupPage onLogin={() => replace('login')} onDone={() => replace('home')} />
+  else if (route.page === 'profile' || route.page === 'interests') content = <ProfileEditRoute key={`${route.page}:${user?.uid}`} kind={route.page === 'profile' ? 'info' : 'interests'} onBack={back} onSaved={back} />
+  else if (route.page === 'article' && id) content = <ArticlePage key={`${id}:${user?.uid}`} id={id} tab={route.tab ?? 'original'} onBack={back}
+    onTab={tab => replace('article', { articleId: id, tab })} onQuotaExceeded={openQuotaDialog}
+    onChat={text => { if (text) setQuote({ id, text }); navigate('chat', { articleId: id }) }} />
+  else if (route.page === 'chat' && id) content = <ChatPage key={`${id}:${user?.uid}`} id={id} quote={quote?.id === id ? quote.text : undefined} onQuoteUsed={clearQuote}
+    onBack={back} onHistory={() => navigate('chats')} onArticle={() => navigate('article', { articleId: id })} />
+  else if (route.page === 'chats') content = <ChatHistoryPage key={user?.uid} onBack={back} onOpen={roomId => navigate('chat', { articleId: roomId })} />
+  else if (route.page === 'subscription' && member) content = <SubscriptionPage key={user?.uid} onBack={back} onActivated={() => replace('home')} />
+  else content = <HomePage key={user?.uid} member={member} onArticle={articleId => navigate('article', { articleId })} onInterests={() => navigate('interests')}
+    onProfile={() => navigate(member ? 'profile' : 'signup')} onChats={() => navigate('chats')} onLogin={() => navigate('login')} />
 
-  return <>{usingEmulators && <div className="fixed top-0 left-0 z-40 bg-surface px-2 py-1 text-[10px] text-muted">Firebase 로컬 테스트</div>}{content}{subscribedToast && <div role="status" className="fixed inset-x-5 top-14 z-50 mx-auto flex max-w-[350px] items-center gap-3 rounded-xl bg-[#293341] p-4 text-sm text-white shadow-md"><span aria-hidden="true">✓</span><div><strong>구독을 시작했어요</strong><p className="mt-1 text-slate-200">이제 횟수 제한 없이 변환할 수 있어요.</p></div></div>}<ConversionLimitDialog onSubscribe={openPlan} open={limitOpen} viewer={viewer} onClose={() => setLimitOpen(false)} onLogin={() => { setLimitOpen(false); navigate('login') }} onSignUp={() => { setLimitOpen(false); navigate('signup') }} /><Dialog open={Boolean(notice)} labelledBy="app-notice" onClose={() => setNotice('')}><h2 id="app-notice" className="text-center text-lg leading-[26px] font-bold">{notice}</h2><Button className="mt-6" onClick={() => setNotice('')}>확인</Button></Dialog></>
+  return <>
+    {usingEmulators && <div className="fixed top-0 left-0 z-40 bg-surface px-2 py-1 text-[10px] text-muted">Firebase 로컬 테스트</div>}
+    {content}
+    <ConversionLimitDialog open={limitOpen} viewer={member ? 'member' : 'guest'} onClose={() => setLimitOpen(false)}
+      onSubscribe={() => { setLimitOpen(false); navigate('subscription') }}
+      onLogin={() => { setLimitOpen(false); navigate('login') }} onSignUp={() => { setLimitOpen(false); navigate('signup') }} />
+  </>
 }

@@ -23,6 +23,8 @@ const { getQuota, reserveConversion, usageDay } = await import('../functions/src
 const { adminServices } = await import('../functions/src/firebase.js')
 let server, port, account, second
 let rewriteShouldFail = false
+const newsItem = { newsKey: 'c'.repeat(32), id: 'c'.repeat(32), title: '청년 일경험 지원사업 확대', excerpt: '졸업 예정자도 신청할 수 있다.', topicId: 'youth', publisher: '테스트', sourceUrl: 'https://example.com/test-article', publishedAt: new Date().toISOString(),
+  tags: { topics: ['jobs', 'youth'], keywords: ['일경험'], ages: ['early20s'], occupations: ['university'], difficult: true, why: '졸업 예정자도 신청할 수 있어요' } }
 const fixtureArticle = { id: 'b'.repeat(32), topicId: 'economy', title: '테스트 기사', easyTitle: '테스트 기사', publisher: '테스트', publishedAt: '', sourceUrl: 'https://example.com/test-article', excerpt: '테스트 본문', originalParagraphs: ['오프라인 통합 테스트를 위한 기사 본문입니다.'], easyParagraphs: [], summary: [], comparison: '', reports: [] }
 
 function request(targetPort, path, body, token, method = body ? 'POST' : 'GET') {
@@ -38,14 +40,19 @@ before(async () => {
   process.env.MONOROUTER_MODEL = 'offline-test-only'
   server = createApp({
     articleReader: async () => structuredClone(fixtureArticle),
-    rewrite: async () => {
+    rewrite: async (_article, _signal, onStage) => {
       if (rewriteShouldFail) throw new AppError('AI_INVALID_RESPONSE', '테스트 실패', 502)
-      return { easyTitle: '쉬운 제목', easyParagraphs: ['쉬운 본문'], summary: ['핵심 요약'], keywords: ['테스트'], topicId: 'economy' }
+      onStage(3)
+      return { easyTitle: '쉬운 제목', easyParagraphs: ['쉬운 본문'], summary: ['핵심 요약'], keywords: ['테스트'], topicId: 'economy', background: '배경', glossary: [], changedCount: 1 }
     },
-    findRelated: async () => [],
-    compare: async () => ({ reports: [], comparison: '' }),
+    reason: async () => '취업 준비에 도움이 돼요.',
+    answer: async (_article, history, { quote, question }) => question.includes('점심')
+      ? { offTopic: true, answer: '뉴스·기사 관련 질문을 도와드려요.' }
+      : { offTopic: false, answer: `답변 ${history.length}: ${quote || question}` },
+    catalog: async () => ({ items: [newsItem] }),
   }).listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
+  await adminServices().db.collection('newsArticles').doc(newsItem.newsKey).set(newsItem)
   port = server.address().port
   account = (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', { returnSecureToken: true })).data
   second = (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', { returnSecureToken: true })).data
@@ -65,9 +72,78 @@ test('requires real Firebase tokens and rejects untrusted origins', async () => 
 test('profile schemas reject role escalation and invalid topics; profiles remain account-scoped', async () => {
   assert.equal((await request(port, '/api/profile', { topicIds: ['economy'], completed: true, role: 'admin' }, account.idToken, 'PUT')).status, 400)
   assert.equal((await request(port, '/api/profile', { topicIds: ['arbitrary'], completed: true }, account.idToken, 'PUT')).status, 400)
+  assert.equal((await request(port, '/api/profile', { customKeywords: Array.from({ length: 11 }, (_, i) => '분야' + i) }, account.idToken, 'PUT')).status, 400)
+  assert.equal((await request(port, '/api/profile', { ageGroup: 'early20s', gender: 'female', occupation: 'other', occupationOther: '휴학생', privacyConsent: false }, account.idToken, 'PUT')).status, 400)
   assert.equal((await request(port, '/api/profile', { topicIds: ['economy'], completed: true }, account.idToken, 'PUT')).status, 200)
-  assert.deepEqual((await request(port, '/api/profile', undefined, account.idToken)).data.topicIds, ['economy'])
+  const saved = (await request(port, '/api/profile', { ageGroup: 'early20s', gender: 'female', occupation: 'university', occupationOther: '무시', privacyConsent: true, customKeywords: ['장학금'] }, account.idToken, 'PUT')).data
+  assert.deepEqual([saved.topicIds, saved.ageGroup, saved.occupation, saved.occupationOther, saved.customKeywords], [['economy'], 'early20s', 'university', '', ['장학금']])
+  assert.equal(saved.keywordWeights, undefined)
   assert.deepEqual((await request(port, '/api/profile', undefined, second.idToken)).data.topicIds, [])
+})
+
+test('nicknames are unique across members and guests cannot reserve one', async () => {
+  const make = async name => (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', { email: name + '@id.easynews.invalid', password: 'reader1234!', returnSecureToken: true })).data.idToken
+  const stamp = Date.now().toString(36).slice(-5)
+  const [first, other] = await Promise.all([make('nick1' + stamp), make('nick2' + stamp)])
+  const nickname = '민서' + stamp.replace(/[^a-z0-9]/g, '').slice(0, 5)
+  assert.equal((await request(port, '/api/profile', { nickname }, account.idToken, 'PUT')).status, 403)
+  assert.equal((await request(port, '/api/auth/nickname?name=' + encodeURIComponent(nickname))).data.available, true)
+  assert.equal((await request(port, '/api/profile', { nickname }, first, 'PUT')).status, 200)
+  assert.equal((await request(port, '/api/auth/nickname?name=' + encodeURIComponent(nickname))).data.available, false)
+  const taken = await request(port, '/api/profile', { nickname: nickname.toUpperCase() }, other, 'PUT')
+  assert.equal(taken.status, 409)
+  assert.equal(taken.data.code, 'NICKNAME_TAKEN')
+  assert.equal((await request(port, '/api/profile', { nickname: nickname + 'x' }, first, 'PUT')).status, 200)
+  assert.equal((await request(port, '/api/profile', { nickname }, other, 'PUT')).status, 200)
+  assert.equal((await request(port, '/api/auth/nickname?name=bad%20name')).status, 400)
+})
+
+test('the feed scores catalog stories per reader; feedback, bookmarks and reasons are private', async () => {
+  const token = second.idToken
+  await request(port, '/api/profile', { topicIds: ['youth'], ageGroup: 'early20s', occupation: 'university', privacyConsent: true }, token, 'PUT')
+  const feed = (await request(port, '/api/feed', undefined, token)).data
+  assert.deepEqual([feed.total, feed.matched, feed.hasInterests, feed.profileComplete], [1, 1, true, true])
+  assert.equal(feed.items[0].id, newsItem.newsKey)
+  assert.ok(feed.items[0].match.score >= 80)
+  const detail = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, token)).data
+  assert.deepEqual([detail.reason, detail.feedback, detail.bookmarked, detail.converted], [null, null, false, null])
+  assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/reason`, {}, token)).data.reason, '취업 준비에 도움이 돼요.')
+  assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/feedback`, { value: 'bad' }, token, 'PUT')).status, 200)
+  assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/bookmark`, { saved: true }, token, 'PUT')).status, 200)
+  const after = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, token)).data
+  assert.deepEqual([after.reason, after.feedback, after.bookmarked], ['취업 준비에 도움이 돼요.', 'bad', true])
+  assert.equal((await request(port, '/api/feed', undefined, token)).data.items.length, 0)
+  const own = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, account.idToken)).data
+  assert.deepEqual([own.feedback, own.bookmarked], [null, false])
+  assert.equal((await request(port, `/api/feed/${'d'.repeat(32)}`, undefined, token)).status, 404)
+  assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/feedback`, { value: 'meh' }, token, 'PUT')).status, 400)
+})
+
+test('chat rooms are created by the first message, continue with history, and can be deleted', async () => {
+  const token = account.idToken
+  const path = `/api/chats/${newsItem.newsKey}`
+  const empty = (await request(port, path, undefined, token)).data
+  assert.equal(empty.room, null)
+  assert.equal(empty.article.title, newsItem.title)
+  const first = (await request(port, path + '/messages', { text: '', quote: '오프라인 통합 테스트' }, token)).data
+  assert.equal(first.created, true)
+  assert.deepEqual(first.messages.map(message => [message.role, message.text]), [['user', ''], ['assistant', '답변 0: 오프라인 통합 테스트']])
+  const next = (await request(port, path + '/messages', { text: '나한테 어떤 영향이 있어?' }, token)).data
+  assert.equal(next.created, false)
+  assert.equal(next.messages[1].text, '답변 2: 나한테 어떤 영향이 있어?')
+  const offTopic = (await request(port, path + '/messages', { text: '오늘 점심 메뉴 추천해 줘' }, token)).data
+  assert.equal(offTopic.messages[1].offTopic, true)
+  assert.equal((await request(port, path + '/messages', { text: '' }, token)).status, 400)
+  const room = (await request(port, path, undefined, token)).data
+  assert.equal(room.messages.length, 6)
+  assert.equal(room.messages[0].quote, '오프라인 통합 테스트')
+  assert.equal(room.room.context, undefined)
+  const list = (await request(port, '/api/chats', undefined, token)).data
+  assert.equal(list.length, 1)
+  assert.equal(list[0].lastMessage.text, '뉴스·기사 관련 질문을 도와드려요.')
+  assert.deepEqual((await request(port, '/api/chats', undefined, second.idToken)).data, [])
+  assert.equal((await request(port, path, undefined, token, 'DELETE')).data.deleted, true)
+  assert.deepEqual((await request(port, '/api/chats', undefined, token)).data, [])
 })
 
 test('unlimited conversions accept parallel requests and rollback cancellation', async () => {
@@ -128,27 +204,7 @@ test('conversion streams actual stages, saves the result and refunds provider fa
   assert.match(result.data, /"step":2/)
   assert.match(result.data, /"step":3/)
   assert.match(result.data, /event: result/)
-  assert.match(result.data, /"comparisonStatus":"no-candidates"/)
+  assert.match(result.data, /"background":"배경"/)
   assert.equal((await getQuota(second.localId)).remaining, null)
   assert.equal((await request(port, `/api/articles/${fixtureArticle.id}`, undefined, token)).data.easyTitle, '쉬운 제목')
-})
-
-test('a deferred conversion can be read immediately and comparison resumes from the saved article', async () => {
-  const token = second.idToken
-  const body = { sourceUrl: fixtureArticle.sourceUrl, deferComparison: true }
-  const convert = async () => {
-    const result = await request(port, '/api/convert', body, token)
-    const data = result.data.match(/event: result\ndata: ([^\n]+)/)
-    assert.ok(data)
-    return JSON.parse(data[1])
-  }
-  const reading = await convert()
-  assert.equal(reading.comparisonStatus, 'pending')
-  assert.deepEqual(reading.easyParagraphs, ['쉬운 본문'])
-  const path = `/api/articles/${reading.id}/comparison`
-  const completed = await request(port, path, {}, token)
-  assert.equal(completed.data.comparisonStatus, 'no-candidates')
-  const cached = await convert()
-  assert.equal(cached.comparisonPlan.revision, reading.comparisonPlan.revision)
-  assert.equal(cached.comparisonStatus, completed.data.comparisonStatus)
 })

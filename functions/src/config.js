@@ -1,4 +1,5 @@
-export const TOPIC_IDS = ['economy', 'politics', 'society', 'technology', 'health', 'culture', 'lifestyle']
+export const TOPIC_IDS = ['jobs', 'economy', 'politics', 'society', 'technology', 'youth', 'health', 'culture', 'lifestyle']
+export const TOPIC_LABELS = { jobs: '취업', economy: '경제', politics: '정치', society: '사회', technology: 'IT·과학', youth: '청년정책', health: '건강', culture: '문화', lifestyle: '생활' }
 
 export function getConfig() {
   const naverHubClientId = process.env.NAVER_API_HUB_CLIENT_ID?.trim()
