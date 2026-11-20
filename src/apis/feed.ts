@@ -3,6 +3,7 @@ import type { ChatArticle, ChatMessage, ChatRoom, FeedDetail, FeedResponse, Simi
 
 export const getFeed = (signal?: AbortSignal) => apiRequest<FeedResponse>('/feed', { signal })
 export const getFeedDetail = (id: string, signal?: AbortSignal) => apiRequest<FeedDetail>(`/feed/${encodeURIComponent(id)}`, { signal })
+export const getImage = (id: string, signal?: AbortSignal) => apiRequest<{ imageUrl: string | null }>(`/feed/${encodeURIComponent(id)}/image`, { signal })
 export const getSimilar = (id: string, signal?: AbortSignal) => apiRequest<SimilarArticle[]>(`/feed/${encodeURIComponent(id)}/similar`, { signal })
 export const getReason = (id: string, signal?: AbortSignal) => apiRequest<{ reason: string }>(`/feed/${encodeURIComponent(id)}/reason`, { method: 'POST', signal })
 export const sendFeedback = (id: string, value: 'good' | 'bad') => apiRequest<{ value: string }>(`/feed/${encodeURIComponent(id)}/feedback`, { method: 'PUT', body: JSON.stringify({ value }) })

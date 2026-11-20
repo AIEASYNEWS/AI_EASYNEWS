@@ -53,6 +53,7 @@ before(async () => {
       : { offTopic: false, answer: `답변 ${history.length}: ${quote || question}` },
     catalog: async () => ({ items: [newsItem] }),
     expand: async word => { expandCalls.push(word); return word.startsWith('백엔드') ? { meaningful: true, terms: ['일경험'] } : { meaningful: false, terms: [] } },
+    imageReader: async () => 'https://cdn.example/test.jpg',
     collect: async (_db, options) => { collectCalls.push(options); return { stored: 1, tagged: 1, failedTopics: [] } },
   }).listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
@@ -144,6 +145,8 @@ test('the feed scores catalog stories per reader; feedback, bookmarks and reason
   const places = await adminServices().db.collection('regionsInUse').doc('경상북도_경산시').get()
   assert.equal(places.data().query, '경산시')
   assert.ok(Array.isArray((await request(port, `/api/feed/${newsItem.newsKey}/similar`, undefined, token)).data))
+  assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/image`, undefined, token)).data.imageUrl, 'https://cdn.example/test.jpg')
+  assert.equal((await adminServices().db.collection('newsArticles').doc(newsItem.newsKey).get()).data().imageUrl, 'https://cdn.example/test.jpg')
   assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/feedback`, { value: 'meh' }, token, 'PUT')).status, 400)
 })
 
