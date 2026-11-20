@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFeed, scoreMatch, similarArticles, grade, weightKeys, tagArticles } from '../src/matching.js'
+import { buildFeed, scoreMatch, similarArticles, grade, weightKeys, tagArticles, tagStoredNews } from '../src/matching.js'
 
 const now = Date.parse('2026-11-20T03:00:00Z')
 const hoursAgo = hours => new Date(now - hours * 3600_000).toISOString()
@@ -68,4 +68,18 @@ test('AI tags are validated per article and unknown ids are dropped', async cont
   const tags = await tagArticles([youthJob])
   assert.equal(tags.size, 1)
   assert.deepEqual(tags.get(youthJob.newsKey).topics, ['youth'])
+})
+
+test('tagging stops at the deadline and leaves the rest for the next run', async () => {
+  process.env.MONOROUTER_API_KEY = 'test-only-key'
+  process.env.MONOROUTER_MODEL = 'test-text-model'
+  const writes = []
+  const db = { collection: () => ({ doc: id => id }), batch: () => ({ set: id => writes.push(id), commit: async () => {} }) }
+  const records = Array.from({ length: 4 }, (_, index) => ({ ...youthJob, newsKey: String(index).repeat(32), tags: undefined }))
+  let calls = 0
+  const tag = async batch => { calls++; return new Map(batch.map(item => [item.newsKey, youthJob.tags])) }
+  assert.equal(await tagStoredNews(db, records, { batchSize: 2, tag, deadline: Date.now() - 1 }), 0)
+  assert.equal(await tagStoredNews(db, records, { batchSize: 2, tag }), 4)
+  assert.equal(calls, 2)
+  assert.equal(writes.length, 4)
 })

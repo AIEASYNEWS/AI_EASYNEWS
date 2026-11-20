@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import { z } from 'zod'
 import { AppError, publicError } from './errors.js'
@@ -7,7 +8,7 @@ import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle, articleId } from './articles.js'
 import { parsePublicUrl } from './safeFetch.js'
-import { getExploreNews } from './news.js'
+import { collectNews, getExploreNews } from './news.js'
 import { assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
 import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
 import { AGE_GROUPS, GENDERS, OCCUPATIONS, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, similarArticles, tagStoredNews, weightKeys } from './matching.js'
@@ -38,7 +39,7 @@ const rate = new Map()
 
 const roomArticle = item => ({ id: item.newsKey, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt || '', topicId: item.tags?.topics?.[0] || item.topicId, sourceUrl: item.sourceUrl })
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
   const subscriptionFor = user => getSubscription(user, demoSubscriptions)
   app.disable('x-powered-by')
@@ -82,6 +83,16 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
       if (error.code !== 'auth/user-not-found') throw error
       response.json({ available: true })
     }
+  })
+  // Called every 30 minutes by the GitHub Actions schedule (.github/workflows/collect-news.yml).
+  router.post('/cron/collect', async (request, response) => {
+    const secret = getConfig().cronSecret
+    if (!secret) throw new AppError('CRON_NOT_CONFIGURED', '수집 작업 설정을 확인해 주세요.', 503)
+    const digest = value => createHash('sha256').update(value).digest()
+    const given = /^Bearer (.+)$/.exec(request.headers.authorization || '')?.[1] || ''
+    if (!timingSafeEqual(digest(given), digest(secret))) throw new AppError('CRON_UNAUTHORIZED', '수집 작업 권한을 확인하지 못했어요.', 401)
+    // Leave headroom under the 300-second function limit for the response.
+    response.json(await collect(undefined, { tagLimit: 90, deadline: Date.now() + 200_000 }))
   })
   router.get('/auth/nickname', async (request, response) => {
     const nickname = z.string().trim().regex(NICKNAME_PATTERN).parse(request.query.name)

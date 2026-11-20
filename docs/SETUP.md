@@ -126,7 +126,12 @@ AI 단위 테스트는 응답 형식·출처 제한·오류 처리를 검증하�
 
 ## v2 맞춤 뉴스·소식이 동작 방식
 
-- 뉴스 수집(`collectNews`) 직후 같은 MonoRouter 모델로 새 기사에 매칭 태그(분야·대상 연령·직종·쉬운말 필요 여부·한 줄 이유)를 붙여 `newsArticles`에 저장합니다. 예약 함수에도 `MONOROUTER_API_KEY` 비밀 값이 연결되어 있어야 하며, 키가 없으면 태그 없이 규칙 점수만 계산합니다. 태그가 없는 최근 기사는 홈(`/api/feed`)을 열 때 일부씩 추가로 태깅합니다.
+- 뉴스 수집(`collectNews`) 직후 같은 MonoRouter 모델로 새 기사에 매칭 태그(분야·대상 연령·직종·쉬운말 필요 여부·한 줄 이유)를 붙여 `newsArticles`에 저장합니다. 키가 없으면 태그 없이 규칙 점수만 계산합니다. 태그가 없는 최근 기사는 홈(`/api/feed`)을 열 때 일부씩 추가로 태깅합니다.
+- 운영 수집은 GitHub Actions(`.github/workflows/collect-news.yml`)가 30분마다 Vercel의 `POST /api/cron/collect`를 호출해 실행합니다. Firebase 예약 함수는 Blaze 요금제가 필요하므로 쓰지 않습니다.
+  1. Vercel 환경변수에 `CRON_SECRET`(충분히 긴 임의 문자열)을 추가하고 다시 배포합니다. `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`, `MONOROUTER_API_KEY`도 Vercel에 있어야 합니다.
+  2. GitHub 저장소 Settings → Secrets and variables → Actions에 같은 값의 `CRON_SECRET` 시크릿을 추가합니다. 운영 주소가 다르면 `APP_URL` 변수(예: `https://ai-easynews.vercel.app`)도 추가합니다.
+  3. 예약 실행은 기본 브랜치(main)에 워크플로 파일이 있어야 동작합니다. 병합 후 Actions 탭에서 `Collect news`를 수동 실행(Run workflow)해 응답 `{"stored":…,"tagged":…}`를 확인합니다.
+  4. 한 번 호출은 Vercel 시간 제한(300초) 안에서 최대 90건까지 태깅하고, 남은 기사는 다음 실행에서 이어서 태깅합니다. 푸시 알림 발송은 이 작업에 포함되지 않습니다.
 - 매칭률은 관심 분야 50 + 내 정보(나이·직종) 30 + 시의성 20점이며, 서버가 규칙으로 계산합니다(성별은 점수에 쓰지 않음). 홈에는 최근 24시간 기사 중 60% 이상만 보여 줍니다. '잘 맞아요/관련 없어요' 피드백은 해당 기사의 분야·키워드 가중치(±3단계, 점수 최대 ±8점)로 반영됩니다.
 - 기사 상세의 '필요한 이유'는 처음 열 때 LLM이 만들고 프로필이 바뀌기 전까지 캐시합니다.
 - 쉬운말 변환(`/api/convert`)은 배경·낱말 풀이와 쉬운말 본문을 두 번의 병렬 호출로 만들고 진행 단계(읽기 → 배경 → 쉬운말)를 스트리밍합니다.
