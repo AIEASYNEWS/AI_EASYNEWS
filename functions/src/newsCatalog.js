@@ -67,10 +67,12 @@ export async function storeNewsCandidates(db, items, observedAt) {
       return snapshots.map((snapshot, index) => {
         const item = batch[index]
         const previous = snapshot.data()
-        if (previous && (previous.updatedAt > observedAt || fields.every(field => previous[field] === item[field]))) return previous
+        if (previous && (previous.updatedAt > observedAt || fields.every(field => previous[field] === item[field] || (field === 'imageUrl' && item[field] === undefined)))) return previous
         const record = { ...item, firstSeenAt: previous?.firstSeenAt ?? observedAt, updatedAt: observedAt,
           // AI matching tags describe the same story; keep them while the headline is unchanged.
-          ...(previous?.tags && previous.title === item.title ? { tags: previous.tags } : {}) }
+          ...(previous?.tags && previous.title === item.title ? { tags: previous.tags } : {}),
+          // Enriched later (og:image, similar stories, region hint); search results do not carry them.
+          ...Object.fromEntries(['imageUrl', 'imageCheckedAt', 'regionHint', 'similar', 'similarAt'].filter(key => previous?.[key] !== undefined && item[key] === undefined).map(key => [key, previous[key]])) }
         tx.set(snapshot.ref, record)
         return record
       })

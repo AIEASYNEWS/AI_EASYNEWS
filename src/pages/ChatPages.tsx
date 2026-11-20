@@ -16,7 +16,7 @@ function BotBubble({ children, typing }: { children?: ReactNode; typing?: boolea
   return <div className="flex items-start gap-2">
     <Character size={32} />
     <div className="max-w-[260px] rounded-2xl rounded-tl-sm bg-surface px-[14px] py-[10px] text-sm leading-[21px] break-keep whitespace-pre-line">
-      {typing ? <span role="status" aria-label="소식이가 답변을 만들고 있어요" className="flex h-[21px] items-center gap-1">{[0, 1, 2].map(dot => <span key={dot} style={{ animationDelay: `${dot * 150}ms` }} className="size-1.5 animate-bounce rounded-full bg-secondary motion-reduce:animate-none" />)}</span> : children}
+      {typing ? <span role="status" aria-label="소식이가 답변을 만들고 있어요" className="flex h-[21px] items-center gap-1">{[0, 1, 2].map(dot => <span key={dot} style={{ animationDelay: `${dot * 150}ms` }} className="size-1.5 animate-bounce rounded-full bg-brand motion-reduce:animate-none" />)}</span> : children}
     </div>
   </div>
 }
@@ -25,7 +25,7 @@ function UserMessage({ message }: { message: Pick<ChatMessage, 'text' | 'quote'>
   return <div className="flex flex-col items-end gap-2">
     {message.quote && <>
       <span className="text-xs text-muted">드래그한 부분</span>
-      <blockquote className="max-w-[280px] rounded-xl border border-line bg-white px-3 py-3 text-[13px] leading-5"><p className="border-l-2 border-ink pl-2 break-keep">{message.quote}</p></blockquote>
+      <blockquote className="max-w-[280px] rounded-xl border border-line bg-white px-3 py-3 text-[13px] leading-5"><p className="border-l-2 border-brand pl-2 break-keep">{message.quote}</p></blockquote>
     </>}
     {message.text && <p className="max-w-[260px] rounded-2xl rounded-tr-sm bg-brand px-[14px] py-[10px] text-sm leading-[21px] break-keep whitespace-pre-line text-white">{message.text}</p>}
   </div>
@@ -100,7 +100,7 @@ export function ChatPage({ id, quote, onQuoteUsed, onBack, onHistory, onArticle 
       <form onSubmit={submit} className="mt-3 flex gap-2 px-5">
         <input aria-label="소식이에게 질문하기" maxLength={1000} placeholder="소식이에게 물어보세요" value={input} onChange={event => setInput(event.target.value)}
           className="h-11 min-w-0 flex-1 rounded-full border border-slate-300 px-4 text-sm placeholder:text-slate-400 focus:border-brand focus:outline-none" />
-        <button type="submit" aria-label="보내기" disabled={!input.trim() || busy} className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-ink text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-300"><LineIcon name="up" size={20} /></button>
+        <button type="submit" aria-label="보내기" disabled={!input.trim() || busy} className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-slate-300"><LineIcon name="up" size={20} /></button>
       </form>
       <p className="mt-2 px-5 text-center text-xs leading-[18px] text-muted">AI 답변이에요.<br />금액·날짜는 원문에서 확인해 주세요.</p>
     </div>}>
@@ -115,8 +115,12 @@ export function ChatPage({ id, quote, onQuoteUsed, onBack, onHistory, onArticle 
       {data.messages.map(message => message.role === 'user' ? <UserMessage key={message.id} message={message} /> : <BotBubble key={message.id}>{message.text}</BotBubble>)}
       {pending && <UserMessage message={pending} />}
       {pending && !pending.failed && <BotBubble typing />}
-      {pending?.failed && <div role="alert"><BotBubble>답변을 만들지 못했어요.{'\n'}{pending.failed}</BotBubble>
-        <button type="button" onClick={() => void send(pending)} className="mt-2 ml-10 h-8 cursor-pointer rounded-full border border-slate-300 px-3 text-xs font-medium text-secondary hover:bg-surface">다시 시도</button></div>}
+      {pending?.failed && <div role="alert" className="flex items-start gap-2"><Character size={32} />
+        <div className="max-w-[240px] rounded-2xl rounded-tl-sm border border-[#f04452] bg-white p-3">
+          <p className="flex items-center gap-1 text-sm font-bold"><LineIcon name="info" size={16} />답변을 만들지 못했어요</p>
+          <p className="mt-1 pl-5 text-xs leading-[18px] text-muted">{pending.failed || '잠시 후 다시 시도해 주세요.'}</p>
+          <button type="button" onClick={() => void send(pending)} className="mt-3 ml-5 h-9 cursor-pointer rounded-full bg-brand px-4 text-[13px] font-bold text-white">다시 시도</button>
+        </div></div>}
       <div ref={bottomRef} />
     </div>
   </Screen>

@@ -7,6 +7,7 @@ rules_version = '2';
 // users/{uid}/chatRooms/{newsKey} (+ /messages): 소식이 article chat rooms, server only.
 // nicknames/{normalized}: uid owning a nickname (uniqueness), server only.
 // newsArticles/{newsKey}: collected catalog with AI matching tags, server only.
+// regionsInUse/{시도_시군구}: places readers chose, searched by the collector, server only.
 // keywordExpansions/{hash}: AI meaning expansion of a typed interest keyword, shared, server only.
 // users/{uid}/usage/{day}: count (int), pending (lease id -> expiry millis), server only.
 // users/{uid}/questionUsage/{day}: count (int), server only.

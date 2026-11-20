@@ -1,8 +1,9 @@
 import { apiRequest } from './client'
-import type { ChatArticle, ChatMessage, ChatRoom, FeedDetail, FeedResponse } from '../types/news'
+import type { ChatArticle, ChatMessage, ChatRoom, FeedDetail, FeedResponse, SimilarArticle } from '../types/news'
 
 export const getFeed = (signal?: AbortSignal) => apiRequest<FeedResponse>('/feed', { signal })
 export const getFeedDetail = (id: string, signal?: AbortSignal) => apiRequest<FeedDetail>(`/feed/${encodeURIComponent(id)}`, { signal })
+export const getSimilar = (id: string, signal?: AbortSignal) => apiRequest<SimilarArticle[]>(`/feed/${encodeURIComponent(id)}/similar`, { signal })
 export const getReason = (id: string, signal?: AbortSignal) => apiRequest<{ reason: string }>(`/feed/${encodeURIComponent(id)}/reason`, { method: 'POST', signal })
 export const sendFeedback = (id: string, value: 'good' | 'bad') => apiRequest<{ value: string }>(`/feed/${encodeURIComponent(id)}/feedback`, { method: 'PUT', body: JSON.stringify({ value }) })
 export const setBookmark = (id: string, saved: boolean) => apiRequest<{ bookmarked: boolean }>(`/feed/${encodeURIComponent(id)}/bookmark`, { method: 'PUT', body: JSON.stringify({ saved }) })

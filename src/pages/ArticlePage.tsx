@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { getFeedDetail, getReason, sendFeedback, setBookmark } from '../apis/feed'
+import { getFeedDetail, getReason, getSimilar, sendFeedback, setBookmark } from '../apis/feed'
 import { convertArticle, getArticlePreview } from '../apis/news'
 import { ChatFab, Character } from '../components/v2/Character'
-import { PillButton, TopicLabel } from '../components/v2/Controls'
+import { PillButton, Skeleton, TopicLabel } from '../components/v2/Controls'
 import { IconButton, Screen } from '../components/v2/Screen'
 import { LineIcon } from '../components/ui/LineIcon'
 import { RequestState } from '../components/ui/RequestState'
 import { topicLabel } from '../constants/topics'
 import { useDragToAsk } from '../hooks/useDragToAsk'
-import type { FeedDetail, NewsArticle } from '../types/news'
+import type { FeedDetail, NewsArticle, SimilarArticle } from '../types/news'
 import { readableArticleParagraphs } from '../utils/articleText'
 import { formatDot, relativeTime } from '../utils/date'
-import { MatchBadge } from './HomePage'
+import { MatchBadge, Thumb } from './HomePage'
 
 export type ArticleTab = 'original' | 'easy'
 type Conversion = { state: 'idle' } | { state: 'running'; step: number } | { state: 'failed'; message: string }
@@ -33,7 +33,7 @@ function Emphasis({ text }: { text: string }) {
 
 function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
   return <div className="flex items-center gap-2 text-[13px]">
-    <span className="w-[118px] shrink-0 text-secondary">{label}</span>
+    <span className="w-[145px] shrink-0 text-secondary">{label}</span>
     <span className="h-2 flex-1 overflow-hidden rounded-full bg-line" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
       <span className="block h-full rounded-full bg-brand" style={{ width: `${Math.round((value / max) * 100)}%` }} />
     </span>
@@ -44,7 +44,7 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
 function Tabs({ tab, onTab }: { tab: ArticleTab; onTab: (tab: ArticleTab) => void }) {
   return <div role="tablist" aria-label="기사 보기 방식" className="flex border-b border-line bg-white">
     {(['original', 'easy'] as const).map(value => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
-      className={`h-12 flex-1 cursor-pointer border-b-2 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${tab === value ? 'border-ink font-bold text-ink' : 'border-transparent text-muted'}`}>
+      className={`h-12 flex-1 cursor-pointer border-b-2 text-base focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ${tab === value ? 'border-brand font-bold text-brand' : 'border-transparent text-subtle'}`}>
       {value === 'original' ? '원문 보기' : '쉬운말 보기'}</button>)}
   </div>
 }
@@ -87,7 +87,9 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
   const [detail, setDetail] = useState<FeedDetail>()
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
-  const [body, setBody] = useState<{ paragraphs: string[]; failed?: boolean }>()
+  const [body, setBody] = useState<{ paragraphs: string[]; imageUrl?: string; failed?: boolean }>()
+  const [similar, setSimilar] = useState<SimilarArticle[]>()
+  const [scoresOpen, setScoresOpen] = useState(false)
   const [reason, setReason] = useState<{ text: string; failed?: boolean }>()
   const [converted, setConverted] = useState<NewsArticle | null>(null)
   const [conversion, setConversion] = useState<Conversion>({ state: 'idle' })
@@ -113,7 +115,7 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
   useEffect(() => {
     if (!sourceUrl || !needsBody) return
     const controller = new AbortController()
-    getArticlePreview(sourceUrl, controller.signal).then(value => { if (!controller.signal.aborted) setBody({ paragraphs: value.originalParagraphs }) })
+    getArticlePreview(sourceUrl, controller.signal).then(value => { if (!controller.signal.aborted) setBody({ paragraphs: value.originalParagraphs, imageUrl: value.imageUrl }) })
       .catch(() => { if (!controller.signal.aborted) setBody({ paragraphs: [], failed: true }) })
     return () => controller.abort()
   }, [sourceUrl, needsBody])
@@ -126,6 +128,16 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
       .catch(() => { if (!controller.signal.aborted) setReason({ text: '', failed: true }) })
     return () => controller.abort()
   }, [id, needsReason])
+
+  // Other publishers' stories are searched on first view (cached on the server per article).
+  const loaded = Boolean(detail)
+  useEffect(() => {
+    if (!loaded) return
+    const controller = new AbortController()
+    getSimilar(id, controller.signal).then(value => { if (!controller.signal.aborted) setSimilar(value) })
+      .catch(() => { if (!controller.signal.aborted) setSimilar([]) })
+    return () => controller.abort()
+  }, [id, loaded])
 
   useEffect(() => () => conversionRef.current?.abort(), [])
 
@@ -151,7 +163,12 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
   }, [easy, detail, converted, conversion.state, startConversion])
   useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }) }, [tab])
 
-  if (!detail) return <Screen pageTitle="기사" onBack={onBack}><RequestState loading={!error} error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /></Screen>
+  if (!detail) return <Screen pageTitle="기사" onBack={onBack} contentClassName="px-5">
+    {error ? <RequestState error={error} onRetry={() => { setError(''); setVersion(value => value + 1) }} /> : <div role="status" aria-label="기사를 불러오고 있어요">
+      <Skeleton className="mt-2 h-[140px] w-full rounded-xl" /><Skeleton className="mt-4 h-6 w-28" /><Skeleton className="mt-3 h-7 w-full" /><Skeleton className="mt-2 h-7 w-2/3" />
+      <Skeleton className="mt-3 h-4 w-40" /><Skeleton className="mt-4 h-[150px] w-full rounded-2xl" />{[0, 1, 2, 3].map(index => <Skeleton key={index} className="mt-4 h-5 w-full" />)}
+    </div>}
+  </Screen>
 
   const nick = detail.nickname ? `${detail.nickname}님` : '나'
   const nickTo = detail.nickname ? `${detail.nickname}님께` : '나에게'
@@ -169,7 +186,7 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
 
   const originalBody = <section aria-label="기사 원문" className="pt-5">
     {!showTabs && <h2 className="mb-3 text-base font-bold">원문</h2>}
-    {!body ? <p className="text-sm text-muted" role="status">원문을 불러오고 있어요.</p>
+    {!body ? <div role="status" aria-label="원문을 불러오고 있어요" className="space-y-3">{[100, 92, 96, 70, 100, 85].map((width, index) => <Skeleton key={index} className="h-5" style={{ width: `${width}%` }} />)}</div>
       : body.failed || !body.paragraphs.length ? <div className="text-sm leading-6 text-secondary"><p>{detail.excerpt}</p>
         <a href={detail.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-[13px] text-brand underline">언론사 원문 열기</a></div>
         : <AskableBody onAsk={ask}>{readableArticleParagraphs(body.paragraphs).map((paragraph, index) => <p key={index} className="text-[15px] leading-[26px] break-keep text-pretty [overflow-wrap:anywhere]">{paragraph}</p>)}</AskableBody>}
@@ -178,13 +195,15 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
 
   const similarAndFeedback = <>
     <div aria-hidden="true" className="-mx-5 mt-8 h-2 bg-surface" />
-    {detail.similar.length > 0 && <section aria-labelledby="similar-heading" className="pt-6">
-      <h2 id="similar-heading" className="text-base font-bold">비슷한 기사도 있어요</h2>
-      <ul className="mt-2 divide-y divide-line">{detail.similar.map(item => <li key={item.id}>
+    {!similar ? <div role="status" aria-label="비슷한 기사를 찾고 있어요" className="pt-6"><Skeleton className="h-6 w-40" />
+      {[0, 1].map(index => <div key={index} className="space-y-2 border-b border-line py-4"><Skeleton className="h-5 w-4/5" /><Skeleton className="h-4 w-3/5" /><Skeleton className="h-3 w-24" /></div>)}</div>
+      : similar.length > 0 && <section aria-labelledby="similar-heading" className="pt-6">
+      <h2 id="similar-heading" className="text-lg font-bold">비슷한 기사도 있어요</h2>
+      <ul className="mt-2 divide-y divide-line border-b border-line">{similar.map(item => <li key={item.id}>
         <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 py-4 focus-visible:outline-2 focus-visible:outline-brand">
-          <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold break-keep">{item.title}</p>
-            {item.excerpt && <p className="mt-1 line-clamp-1 text-xs text-secondary">{item.excerpt}</p>}
-            <p className="mt-1 text-xs text-muted">{item.publisher} · {relativeTime(item.publishedAt)}</p></div>
+          <div className="min-w-0 flex-1"><p className="line-clamp-2 text-base font-bold break-keep">{item.title}</p>
+            {item.excerpt && <p className="mt-1 line-clamp-1 text-sm text-muted">{item.excerpt}</p>}
+            <p className="mt-1 text-xs text-subtle">{item.publisher} · {relativeTime(item.publishedAt)}</p></div>
           <LineIcon name="next" size={20} className="text-muted" />
         </a></li>)}</ul>
     </section>}
@@ -201,12 +220,12 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
 
   if (easy) {
     return <Screen pageTitle="쉬운말 보기" onBack={onBack} scrollRef={scrollRef} contentClassName="px-5" overlay={<ChatFab onClick={() => onChat()} />}>
-      <div className="flex items-center gap-2 pt-1 text-xs text-muted"><MatchBadge score={detail.match.score} /><span>{detail.publisher} · {formatDot(detail.publishedAt)}</span></div>
+      <div className="flex items-center gap-2 pt-1 text-xs text-subtle"><MatchBadge soft score={detail.match.score} /><span>{detail.publisher} · {formatDot(detail.publishedAt)}</span></div>
       <h1 className="mt-2 text-xl leading-7 font-bold break-keep">{detail.title}</h1>
       <div className="sticky top-0 z-10 -mx-5 mt-4 px-5"><Tabs tab={tab} onTab={onTab} /></div>
       {conversion.state === 'running' ? <Converting step={conversion.step} />
         : conversion.state === 'failed' ? <div className="mt-4">
-          <div role="alert" className="rounded-xl border-2 border-ink p-4"><p className="flex items-center gap-2 text-sm font-bold"><LineIcon name="info" size={20} />쉬운말로 바꾸지 못했어요</p>
+          <div role="alert" className="rounded-xl border border-[#f04452] bg-[#fff5f6] p-4"><p className="flex items-center gap-2 text-sm font-bold"><LineIcon name="info" size={20} />쉬운말로 바꾸지 못했어요</p>
             <p className="mt-1 pl-7 text-[13px] leading-5 text-secondary">{conversion.message && !conversion.message.includes('잠시 후') ? `${conversion.message} ` : ''}잠시 후 다시 시도해 주세요. 원문은 원문 보기 탭에서 그대로 볼 수 있어요.</p></div>
           <PillButton className="mt-4 w-full" onClick={() => { setConversion({ state: 'idle' }); startConversion() }}>다시 시도</PillButton>
           <button type="button" onClick={() => onTab('original')} className="mt-2 h-10 w-full cursor-pointer text-[13px] font-medium text-secondary">원문 보기로 돌아가기</button>
@@ -227,30 +246,36 @@ export function ArticlePage({ id, tab, onTab, onBack, onChat, onQuotaExceeded }:
               <dl className="mt-3 space-y-2">{converted.glossary?.map(entry => <div key={entry.term} className="rounded-xl border border-line p-4">
                 <dt className="text-sm font-bold">{entry.term}</dt><dd className="mt-1 text-[13px] leading-5 text-secondary">{entry.meaning}</dd></div>)}</dl></section>}
             <p className="mt-6 flex gap-1 text-xs leading-[18px] text-muted"><LineIcon name="info" size={14} className="mt-0.5" />금액·날짜처럼 정확해야 하는 내용은 원문 보기에서 꼭 확인해 주세요.</p>
-          </article> : <RequestState loading />}
+          </article> : <div role="status" aria-label="쉬운말을 불러오고 있어요" className="mt-4 space-y-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full rounded-xl" />{[0, 1, 2].map(index => <Skeleton key={index} className="h-6 w-full" />)}</div>}
     </Screen>
   }
 
   return <Screen pageTitle="기사 상세" onBack={onBack} scrollRef={scrollRef} contentClassName="px-5" overlay={<ChatFab onClick={() => onChat()} />}
     right={<IconButton label={bookmarked ? '저장 취소' : '기사 저장'} pressed={bookmarked} onClick={toggleBookmark} className="-mr-2"><LineIcon name="bookmark" filled={bookmarked} /></IconButton>}>
-    <div className="mt-2 flex h-[175px] items-center justify-center overflow-hidden rounded-xl bg-surface text-muted">
-      {detail.imageUrl ? <img src={detail.imageUrl} alt="" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true }} className="size-full object-cover" /> : <LineIcon name="image" size={32} />}
-    </div>
+    {/* Catalog stories rarely carry an image; the original page's og:image arrives with the body. */}
+    {detail.imageUrl || body ? <Thumb key={detail.imageUrl || body?.imageUrl || 'none'} src={detail.imageUrl || body?.imageUrl} iconSize={32} className="mt-2 h-[140px] w-full rounded-xl" />
+      : <Skeleton className="mt-2 h-[140px] w-full rounded-xl" />}
     <div className="mt-4 flex flex-wrap gap-1">{detail.topics.map(topic => <TopicLabel key={topic}>{topicLabel(topic)}</TopicLabel>)}</div>
     <h1 className="mt-2 text-xl leading-7 font-bold break-keep">{detail.title}</h1>
     <p className="mt-2 text-xs text-muted">{detail.publisher} · {formatDot(detail.publishedAt)}</p>
-    <section aria-label="매칭 분석" className="mt-4 rounded-xl border border-line p-4">
-      <div className="flex items-center gap-4"><p className="text-[32px] leading-10 font-bold text-brand">{detail.match.score}%</p>
-        <div><p className="text-[13px] text-muted">{nick}과의 매칭률</p><p className="text-base font-bold">{detail.match.grade}</p></div></div>
-      <div className="mt-4 space-y-3">
-        <ScoreBar label="관심 분야" value={detail.match.interest} max={50} />
-        <ScoreBar label="내 정보(나이·직종)" value={detail.match.personal} max={30} />
-        <ScoreBar label="시의성" value={detail.match.timeliness} max={20} />
+    <section aria-label="매칭 분석" className="mt-4 rounded-2xl border border-border bg-surface p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3"><p className="text-[28px] leading-10 font-bold text-brand">{detail.match.score}%</p>
+          <div><p className="text-xs leading-[21px] text-muted">{nick}과의 매칭률</p><p className="text-base font-bold">{detail.match.grade}</p></div></div>
+        <button type="button" aria-expanded={scoresOpen} aria-controls="score-details" onClick={() => setScoresOpen(value => !value)} className="cursor-pointer text-[13px] text-ink">
+          점수 자세히 <span aria-hidden="true" className={`inline-block transition-transform ${scoresOpen ? 'rotate-90' : ''}`}>›</span></button>
       </div>
-      <div className="mt-4 rounded-lg border border-line p-4">
-        <h2 className="text-sm font-bold">{nickTo} 필요한 이유</h2>
-        <p className="mt-2 text-[13px] leading-5 text-secondary" aria-live="polite">{reason ? reason.text || detail.why || '이 기사가 왜 필요한지 정리하지 못했어요.' : '필요한 이유를 정리하고 있어요.'}</p>
-        {detail.match.matchedTags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{detail.match.matchedTags.map(tag => <span key={tag} className="rounded-full border border-line px-2 text-xs leading-6 text-secondary">{tag}</span>)}</div>}
+      {scoresOpen && <div id="score-details" className="mt-3 space-y-2">
+        <ScoreBar label="관심 분야" value={detail.match.interest} max={50} />
+        <ScoreBar label="내 정보(나이·직종·지역)" value={detail.match.personal} max={30} />
+        <ScoreBar label="시의성" value={detail.match.timeliness} max={20} />
+      </div>}
+      <div aria-hidden="true" className="mt-3 h-px bg-line" />
+      <div className="mt-3" aria-live="polite">
+        <h2 className="sr-only">{nickTo} 필요한 이유</h2>
+        {reason ? <p className="text-sm leading-[21px] text-secondary">{reason.text || detail.why || '이 기사가 왜 필요한지 정리하지 못했어요.'}</p>
+          : <div role="status" aria-label="필요한 이유를 정리하고 있어요" className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /></div>}
+        {detail.match.matchedTags.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{detail.match.matchedTags.map(tag => <span key={tag} className="flex h-6 items-center rounded-xl border border-border bg-white px-2 text-xs font-medium text-secondary">{tag}</span>)}</div>}
       </div>
     </section>
     {showTabs && <div className="sticky top-0 z-10 -mx-5 mt-6 px-5"><Tabs tab={tab} onTab={onTab} /></div>}

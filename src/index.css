@@ -8,4 +8,14 @@
   --color-muted: #6b7684;
   --color-surface: #f4f7fb;
   --color-line: #e5eaf0;
+  --color-brand-100: #e3edff;
+  --color-border: #d1d8e0;
+  --color-subtle: #8b95a1;
+  --color-label: #f2f4f6;
+  --color-label-ink: #4e5968;
+  --color-toast: #2b3340;
 }
+
+@keyframes skeleton-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .45 } }
+.skeleton { background: #eaf0f7; border-radius: 6px; animation: skeleton-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

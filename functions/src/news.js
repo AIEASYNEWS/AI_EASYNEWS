@@ -4,6 +4,7 @@ import { articleId, inferTopic, cleanText } from './articles.js'
 import { parsePublicUrl } from './safeFetch.js'
 import { getConfig } from './config.js'
 import { tagStoredNews } from './matching.js'
+import { enrichImages } from './images.js'
 import { AppError } from './errors.js'
 import { readStoredNews, storeNewsCandidates } from './newsCatalog.js'
 import { adminServices } from './firebase.js'
@@ -32,10 +33,10 @@ function itemFrom({ title, url, date, image, description, category }) {
   } catch { return null }
 }
 
-export async function getNaverHubNews(topic, { clientId, clientSecret }, limit = 10) {
+/** NAVER API HUB news search. `category` fixes the topic; otherwise it is inferred from the headline. */
+export async function searchNaverHub(query, { clientId, clientSecret }, { limit = 10, sort = 'date', category, regionHint } = {}) {
   const url = new URL('https://naverapihub.apigw.ntruss.com/search/v1/news')
-  const query = naverHubQueries[topic] || topicLabels[topic]
-  url.search = new URLSearchParams({ query, display: String(limit), sort: 'date', format: 'json' }).toString()
+  url.search = new URLSearchParams({ query, display: String(limit), sort, format: 'json' }).toString()
   const unavailable = new AppError('NEWS_UNAVAILABLE', '네이버 뉴스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.', 503)
   let response
   try {
@@ -55,10 +56,14 @@ export async function getNaverHubNews(topic, { clientId, clientSecret }, limit =
   const items = result.items.flatMap(item => {
     const sourceUrl = item?.originallink || item?.link
     if (typeof sourceUrl !== 'string' || typeof item.title !== 'string') return []
-    const article = itemFrom({ title: item.title, url: sourceUrl, date: item.pubDate, description: item.description, category: topic })
-    return article ? [{ ...article, sourceUrl }] : []
+    const article = itemFrom({ title: item.title, url: sourceUrl, date: item.pubDate, description: item.description, category })
+    return article ? [{ ...article, sourceUrl, ...(regionHint ? { regionHint } : {}) }] : []
   })
   return { items, total: items.length, hasMore: false, source: 'naver-hub' }
+}
+
+export function getNaverHubNews(topic, credentials, limit = 10) {
+  return searchNaverHub(naverHubQueries[topic] || topicLabels[topic], credentials, { limit, category: topic })
 }
 
 function rssFeedTopic(feedUrl) {
@@ -79,20 +84,33 @@ export function parseRssFeed(text, feedUrl) {
   })).filter(Boolean)
 }
 
-export async function collectNews(db = adminServices().db, { tagLimit = 160, deadline } = {}) {
+export async function collectNews(db = adminServices().db, { tagLimit = 160, imageLimit = 60, deadline, regions = readRegionsInUse } = {}) {
   const { naverHub } = getConfig()
   if (!naverHub) throw new AppError('NEWS_NOT_CONFIGURED', '네이버 뉴스 검색 API 연결 설정을 확인해 주세요.', 503)
   const observedAt = Date.now()
   const topics = Object.keys(topicLabels)
-  const results = await Promise.allSettled(topics.map(topic => getNaverHubNews(topic, naverHub, 35)))
+  // Readers' 시·군·구 are searched too so local stories exist for "지역 일치".
+  const places = await regions(db).catch(() => [])
+  const results = await Promise.allSettled([
+    ...topics.map(topic => getNaverHubNews(topic, naverHub, 35)),
+    ...places.map(place => searchNaverHub(place.query, naverHub, { limit: 20, regionHint: place.label })),
+  ])
   const feeds = results.filter(result => result.status === 'fulfilled')
   if (!feeds.length) throw results[0].reason
   const failedTopics = topics.filter((_, index) => results[index].status === 'rejected')
   if (failedTopics.length) console.warn('News collection failed for topics:', failedTopics.join(', '))
   const stored = await storeNewsCandidates(db, feeds.flatMap(feed => feed.value.items), observedAt)
+  const halfway = deadline ? Date.now() + (deadline - Date.now()) / 3 : undefined
+  const images = await enrichImages(db, stored, { limit: imageLimit, deadline: halfway }).catch(() => 0)
   // Matching tags are optional: a missing or failing AI provider leaves rule-only scores.
   const tagged = await tagStoredNews(db, stored, { limit: tagLimit, deadline }).catch(error => { console.warn('News tagging failed:', error.code || error.name); return 0 })
-  return { stored: stored.length, tagged, failedTopics }
+  return { stored: stored.length, tagged, images, regions: places.length, failedTopics }
+}
+
+/** Places readers chose, most recently used first (see store.saveProfile). */
+export async function readRegionsInUse(db, limit = 30) {
+  const snapshot = await db.collection('regionsInUse').orderBy('lastUsedAt', 'desc').limit(limit).get()
+  return snapshot.docs.map(document => document.data()).filter(place => place.query && place.label)
 }
 
 export async function getExploreNews({ query = '', topic = '', sort = 'latest', page = 1 } = {}, load = readStoredNews) {

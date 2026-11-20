@@ -8,10 +8,13 @@ import { activateDemoSubscription, getSubscription } from './subscription.js'
 import { registerDevice } from './push.js'
 import { readArticle, articleId } from './articles.js'
 import { parsePublicUrl } from './safeFetch.js'
+import { isRegion } from './regions.js'
+import { findSimilar } from './similar.js'
+import { enrichImages } from './images.js'
 import { collectNews, getExploreNews } from './news.js'
 import { aiConfigured, assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
 import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
-import { AGE_GROUPS, GENDERS, OCCUPATIONS, expandKeyword, keywordKey, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, similarArticles, tagStoredNews, weightKeys } from './matching.js'
+import { AGE_GROUPS, GENDERS, OCCUPATIONS, expandKeyword, keywordKey, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, tagStoredNews, weightKeys } from './matching.js'
 import {
   getProfile, saveProfile, nicknameAvailable, getQuota, reserveConversion, getArticle, getHistory, reserveQuestion, notificationReads, markNotificationRead,
   getFeedbackMap, saveFeedback, getKeywordExpansions, saveKeywordExpansion, getArticleState, setBookmark, getCachedReason, saveReason, findConvertedArticle,
@@ -28,6 +31,7 @@ const profileSchema = z.object({
   gender: z.enum(Object.keys(GENDERS)),
   occupation: z.enum(Object.keys(OCCUPATIONS)),
   occupationOther: z.string().trim().max(30),
+  region: z.object({ sido: z.string().max(20), sigungu: z.string().max(20) }).strict().refine(isRegion),
   nickname: z.string().trim().regex(NICKNAME_PATTERN),
   privacyConsent: z.literal(true),
   completed: z.boolean(),
@@ -39,7 +43,7 @@ const rate = new Map()
 
 const roomArticle = item => ({ id: item.newsKey, title: item.title, publisher: item.publisher, publishedAt: item.publishedAt || '', topicId: item.tags?.topics?.[0] || item.topicId, sourceUrl: item.sourceUrl })
 
-export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, expand = expandKeyword, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
+export function createApp({ articleReader = readArticle, rewrite = rewriteArticle, answer = chatAnswer, reason = personalReason, catalog = readStoredNews, collect = collectNews, expand = expandKeyword, similar = findSimilar, demoSubscriptions = process.env.ENABLE_DEMO_SUBSCRIPTIONS === 'true' } = {}) {
   const app = express()
   const expanding = new Map()
   /** Creates missing keyword meaning expansions once per keyword; failures leave plain text matching. */
@@ -193,8 +197,11 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     const feed = buildFeed(profile, items, { feedback })
     // Articles collected before tagging existed are tagged lazily; the next visit gets the AI-backed scores.
     void tagStoredNews(adminServices().db, items.filter(item => Date.now() - (Date.parse(item.publishedAt) || item.firstSeenAt || 0) < 86400_000), { limit: 45 }).catch(() => {})
+    // The top story's personal reason, when already written for this reader (Figma A2: 이 기사가 추천된 이유).
+    const topReason = feed.items[0] ? await getCachedReason(request.user.uid, feed.items[0].id, JSON.stringify(profileSummary(profile))).catch(() => null) : null
     response.json({
-      ...feed, nickname: profile.nickname || '', summary: profileSummary(profile),
+      ...feed, nickname: profile.nickname || '', summary: profileSummary(profile), topReason,
+      region: profile.region || null, topicIds: profile.topicIds, customKeywords: profile.customKeywords,
       hasInterests: Boolean(profile.topicIds.length || profile.customKeywords.length),
       profileComplete: Boolean(profile.ageGroup && profile.occupation), waitingForCollection: !items.length,
     })
@@ -202,13 +209,20 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   router.get('/feed/:id', async (request, response) => {
     const item = await loadItem(request.params.id)
     const uid = request.user.uid
-    const [profile, state, converted, { items }] = await Promise.all([readerProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl)), catalog()])
+    const [profile, state, converted] = await Promise.all([readerProfile(uid), getArticleState(uid, item.newsKey), findConvertedArticle(uid, articleId(item.sourceUrl))])
+    // Backfill the representative image so the home cards show it next time.
+    if (!item.imageUrl && !item.imageCheckedAt) void enrichImages(adminServices().db, [item], { limit: 1 }).catch(() => {})
     const profileKey = JSON.stringify(profileSummary(profile))
     response.json({
       ...feedItem(item, scoreMatch(profile, item)), nickname: profile.nickname || '',
-      reason: await getCachedReason(uid, item.newsKey, profileKey), similar: similarArticles(item, items),
+      reason: await getCachedReason(uid, item.newsKey, profileKey), region: profile.region || null,
       ...state, converted: converted?.easyParagraphs?.length ? converted : null,
     })
+  })
+  router.get('/feed/:id/similar', async (request, response) => {
+    const item = await loadItem(request.params.id)
+    const { items } = await catalog()
+    response.json(await similar(item, items))
   })
   router.post('/feed/:id/reason', async (request, response) => {
     const item = await loadItem(request.params.id)

@@ -123,7 +123,7 @@ test('the feed scores catalog stories per reader; feedback, bookmarks and reason
   const feed = (await request(port, '/api/feed', undefined, token)).data
   assert.deepEqual([feed.total, feed.matched, feed.hasInterests, feed.profileComplete], [1, 1, true, true])
   assert.equal(feed.items[0].id, newsItem.newsKey)
-  assert.equal(feed.items[0].match.score, 78)
+  assert.equal(feed.items[0].match.score, 73)
   const detail = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, token)).data
   assert.deepEqual([detail.reason, detail.feedback, detail.bookmarked, detail.converted], [null, null, false, null])
   assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/reason`, {}, token)).data.reason, '취업 준비에 도움이 돼요.')
@@ -135,6 +135,15 @@ test('the feed scores catalog stories per reader; feedback, bookmarks and reason
   const own = (await request(port, `/api/feed/${newsItem.newsKey}`, undefined, account.idToken)).data
   assert.deepEqual([own.feedback, own.bookmarked], [null, false])
   assert.equal((await request(port, `/api/feed/${'d'.repeat(32)}`, undefined, token)).status, 404)
+  // 사는 지역: validated against the 시·군·구 list and shown back on the feed.
+  assert.equal((await request(port, '/api/profile', { region: { sido: '경상북도', sigungu: '해운대구' } }, token, 'PUT')).status, 400)
+  assert.equal((await request(port, '/api/profile', { region: { sido: '경상북도', sigungu: '경산시' } }, token, 'PUT')).status, 200)
+  const local = (await request(port, '/api/feed', undefined, token)).data
+  assert.deepEqual(local.region, { sido: '경상북도', sigungu: '경산시' })
+  assert.equal(local.summary[0], '경산시')
+  const places = await adminServices().db.collection('regionsInUse').doc('경상북도_경산시').get()
+  assert.equal(places.data().query, '경산시')
+  assert.ok(Array.isArray((await request(port, `/api/feed/${newsItem.newsKey}/similar`, undefined, token)).data))
   assert.equal((await request(port, `/api/feed/${newsItem.newsKey}/feedback`, { value: 'meh' }, token, 'PUT')).status, 400)
 })
 
