@@ -15,7 +15,7 @@ export function RegionSheet({ open, initial, onClose, onSelect, pending }: { ope
       <h2 id="region-sheet-title" className="text-lg font-bold">사는 지역</h2>
       <button type="button" aria-label="닫기" onClick={onClose} className="-mr-2 flex size-10 cursor-pointer items-center justify-center rounded-lg hover:bg-surface"><LineIcon name="close" /></button>
     </div>
-    <div className="flex min-h-0 flex-1 border-t border-line" style={{ height: 420 }}>
+    <div className="flex h-[min(420px,55svh)] shrink-0 border-t border-line">
       <ul role="listbox" aria-label="시·도" className="w-[144px] shrink-0 overflow-y-auto bg-surface py-1">
         {REGIONS.map(region => <li key={region.sido} role="option" aria-selected={region.sido === sido}>
           <button type="button" onClick={() => { setSido(region.sido); setSigungu('') }}

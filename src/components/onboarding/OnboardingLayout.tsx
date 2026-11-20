@@ -24,7 +24,7 @@ export function OnboardingLayout({ children, footer, title, action, pageTitle }:
       tabIndex={-1}
       className="relative mx-auto flex min-h-svh w-full max-w-[390px] flex-col bg-white font-['Noto_Sans_KR',sans-serif] text-ink outline-none"
     >
-      <div aria-hidden="true" className="h-[47px] shrink-0" />
+      <div aria-hidden="true" className="h-[max(8px,env(safe-area-inset-top))] shrink-0" />
       <header className="relative flex h-14 shrink-0 items-center justify-center px-5">
         {action && (
           <button

@@ -23,7 +23,7 @@ export function Screen({ pageTitle, heading, onBack, right, footer, children, co
   }, [pageTitle, ref])
   return (
     <div className="relative mx-auto flex h-svh w-full max-w-[390px] flex-col overflow-hidden bg-white font-['Noto_Sans_KR',sans-serif] text-ink">
-      <div aria-hidden="true" className="h-[47px] shrink-0" />
+      <div aria-hidden="true" className="h-[max(8px,env(safe-area-inset-top))] shrink-0" />
       {(heading || onBack || right) && <header className="relative flex h-14 shrink-0 items-center justify-between px-5">
         <div className="flex min-w-10 items-center">
           {onBack && <IconButton label="뒤로 가기" onClick={onBack} className="-ml-2"><LineIcon name="back" /></IconButton>}
