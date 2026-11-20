@@ -156,7 +156,7 @@ export function buildFeed(profile, catalog, { feedback = {}, now = Date.now() } 
     .map(item => ({ item, match: scoreMatch(profile, item, now) }))
     .filter(entry => entry.match.score >= MATCH_THRESHOLD)
     .sort((a, b) => b.match.score - a.match.score || articleTime(b.item) - articleTime(a.item))
-  return { total: today.length, matched: scored.length, items: scored.slice(0, 60).map(entry => feedItem(entry.item, entry.match)) }
+  return { total: today.length, matched: scored.length, items: scored.slice(0, 300).map(entry => feedItem(entry.item, entry.match)) }
 }
 
 /** Other publishers' recent articles about the same subject; opened by their original URL. */
