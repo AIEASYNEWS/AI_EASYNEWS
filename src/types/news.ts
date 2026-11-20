@@ -4,6 +4,8 @@ export type ViewerMode = 'guest' | 'member' | 'subscriber'
 
 export interface NewsItem {
   id: string
+  /** Catalog key used by the article screen; may differ from `id` when the URL had tracking parameters. */
+  newsKey?: string
   topicId: TopicId
   title: string
   publisher: string

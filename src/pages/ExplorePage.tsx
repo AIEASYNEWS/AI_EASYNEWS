@@ -10,15 +10,15 @@ import { useNewsFeed } from '../hooks/useNewsFeed'
 import type { NewsItem } from '../types/news'
 import type { TopicId } from '../types/onboarding'
 
-const categories = ['', 'politics', 'economy', 'society', 'lifestyle', 'technology', 'health', 'culture'] as const
-export function ExplorePage({ onHome, onMyPage, onNotifications, onArticle }: { onHome: () => void; onMyPage: () => void; onNotifications: () => void; onArticle: (article: NewsItem) => void }) {
+const categories = ['', ...TOPICS.map(topic => topic.id)] as const
+export function ExplorePage({ onHome, onMyPage, onNotifications, onArticle }: { onHome: () => void; onMyPage: () => void; onNotifications?: () => void; onArticle: (article: NewsItem) => void }) {
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [topic, setTopic] = useState<TopicId | ''>('')
   const [sort, setSort] = useState('latest')
   const [page, setPage] = useState(1)
   const { data, loading, error, retry } = useNewsFeed(query, topic, sort, page)
-  return <PageLayout title="탐색" header={<><h1 className="text-xl leading-7 font-bold">탐색</h1><button type="button" aria-label="알림" onClick={onNotifications} className="-mr-2 flex size-10 cursor-pointer items-center justify-center rounded-lg focus-visible:outline-2"><Icon name="bell" /></button></>} contentClassName="px-5 pt-1 pb-6" footer={<BottomNavigation active="explore" onHome={onHome} onExplore={() => document.querySelector('main')?.scrollTo({ top: 0 })} onMyPage={onMyPage} />}>
+  return <PageLayout title="탐색" header={<><h1 className="text-xl leading-7 font-bold">탐색</h1>{onNotifications && <button type="button" aria-label="알림" onClick={onNotifications} className="-mr-2 flex size-10 cursor-pointer items-center justify-center rounded-lg focus-visible:outline-2"><Icon name="bell" /></button>}</>} contentClassName="px-5 pt-1 pb-6" footer={<BottomNavigation active="explore" onHome={onHome} onExplore={() => document.querySelector('main')?.scrollTo({ top: 0 })} onMyPage={onMyPage} />}>
     <form role="search" onSubmit={event => { event.preventDefault(); setQuery(input.trim()); setPage(1) }} className="flex h-12 items-center gap-2 rounded-lg border border-slate-300 px-3">
       <button type="submit" aria-label="검색" className="grid min-h-10 place-items-center"><img src="/images/ui/search.svg" alt="" /></button>
       <input type="search" aria-label="뉴스 검색" maxLength={100} value={input} onChange={event => setInput(event.target.value)} placeholder="궁금한 뉴스나 키워드 검색" className="min-w-0 flex-1 text-sm leading-[21px] outline-none placeholder:text-muted" />

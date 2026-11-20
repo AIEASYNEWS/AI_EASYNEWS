@@ -16,7 +16,7 @@ import type { NewsItem, ViewerMode } from '../types/news'
 
 interface Props {
   viewer: ViewerMode; quotaText: string; onHome: () => void; onExplore: () => void; onSettings: () => void
-  onLogin: () => void; onAlerts: () => void; onPlan: () => void; onArticle: (article: NewsItem) => void
+  onLogin: () => void; onAlerts?: () => void; onPlan: () => void; onArticle: (article: NewsItem) => void
 }
 export function MyPage({ viewer, quotaText, onHome, onExplore, onSettings, onLogin, onAlerts, onPlan, onArticle }: Props) {
   const { user } = useAuth()
@@ -40,7 +40,7 @@ export function MyPage({ viewer, quotaText, onHome, onExplore, onSettings, onLog
       <Button className="mt-4 min-h-12!" onClick={onLogin}>로그인하기</Button></section> : null}
       <section className="mt-6"><h2 className="text-lg font-bold">내 관심 주제</h2>{settings.value ? <TopicBadges ids={settings.value.topicIds} /> : <RequestState loading={!settings.error} error={settings.error} onRetry={settings.retry} />}</section>
       <div className="mt-6"><SettingsRow title="관심 주제 설정" onClick={onSettings} />
-        <SettingsRow title="알림 설정" detail={settings.value ? `관심 주제 알림 ${settings.value.enabled ? '켜짐' : '꺼짐'}` : undefined} onClick={onAlerts} />
+        {onAlerts && <SettingsRow title="알림 설정" detail={settings.value ? `관심 주제 알림 ${settings.value.enabled ? '켜짐' : '꺼짐'}` : undefined} onClick={onAlerts} />}
         {paid && <SettingsRow title="구독 관리" detail="결제한 곳에서 구독을 확인하고 바꿀 수 있어요." onClick={onPlan} />}
         {!guest && <button onClick={() => void logout()} className="min-h-14 w-full border-b border-line text-left">로그아웃</button>}</div>
     {(history.value?.length || history.error) ? <details className="mt-6"><summary className="cursor-pointer font-semibold">변환한 기사 {history.value?.length}</summary>
