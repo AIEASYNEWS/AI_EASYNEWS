@@ -79,7 +79,7 @@ export function parseRssFeed(text, feedUrl) {
   })).filter(Boolean)
 }
 
-export async function collectNews(db = adminServices().db) {
+export async function collectNews(db = adminServices().db, { tagLimit = 160, deadline } = {}) {
   const { naverHub } = getConfig()
   if (!naverHub) throw new AppError('NEWS_NOT_CONFIGURED', '네이버 뉴스 검색 API 연결 설정을 확인해 주세요.', 503)
   const observedAt = Date.now()
@@ -91,7 +91,8 @@ export async function collectNews(db = adminServices().db) {
   if (failedTopics.length) console.warn('News collection failed for topics:', failedTopics.join(', '))
   const stored = await storeNewsCandidates(db, feeds.flatMap(feed => feed.value.items), observedAt)
   // Matching tags are optional: a missing or failing AI provider leaves rule-only scores.
-  await tagStoredNews(db, stored, { limit: 160 }).catch(error => console.warn('News tagging failed:', error.code || error.name))
+  const tagged = await tagStoredNews(db, stored, { limit: tagLimit, deadline }).catch(error => { console.warn('News tagging failed:', error.code || error.name); return 0 })
+  return { stored: stored.length, tagged, failedTopics }
 }
 
 export async function getExploreNews({ query = '', topic = '', sort = 'latest', page = 1 } = {}, load = readStoredNews) {

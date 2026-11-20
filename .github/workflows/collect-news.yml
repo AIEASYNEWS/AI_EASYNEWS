@@ -1,0 +1,27 @@
+name: Collect news
+
+# Calls the deployed API every 30 minutes so it collects NAVER news and tags new
+# articles for matching. Requires the repository secret CRON_SECRET, matching the
+# Vercel environment variable of the same name.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: collect-news
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Trigger collection
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://ai-easynews.vercel.app' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "::error::Repository secret CRON_SECRET is not set"; exit 1; fi
+          curl --fail-with-body --silent --show-error --max-time 300 --retry 2 --retry-delay 20 \
+            -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/collect"

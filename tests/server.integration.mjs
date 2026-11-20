@@ -23,6 +23,7 @@ const { getQuota, reserveConversion, usageDay } = await import('../functions/src
 const { adminServices } = await import('../functions/src/firebase.js')
 let server, port, account, second
 let rewriteShouldFail = false
+const collectCalls = []
 const newsItem = { newsKey: 'c'.repeat(32), id: 'c'.repeat(32), title: '청년 일경험 지원사업 확대', excerpt: '졸업 예정자도 신청할 수 있다.', topicId: 'youth', publisher: '테스트', sourceUrl: 'https://example.com/test-article', publishedAt: new Date().toISOString(),
   tags: { topics: ['jobs', 'youth'], keywords: ['일경험'], ages: ['early20s'], occupations: ['university'], difficult: true, why: '졸업 예정자도 신청할 수 있어요' } }
 const fixtureArticle = { id: 'b'.repeat(32), topicId: 'economy', title: '테스트 기사', easyTitle: '테스트 기사', publisher: '테스트', publishedAt: '', sourceUrl: 'https://example.com/test-article', excerpt: '테스트 본문', originalParagraphs: ['오프라인 통합 테스트를 위한 기사 본문입니다.'], easyParagraphs: [], summary: [], comparison: '', reports: [] }
@@ -50,6 +51,7 @@ before(async () => {
       ? { offTopic: true, answer: '뉴스·기사 관련 질문을 도와드려요.' }
       : { offTopic: false, answer: `답변 ${history.length}: ${quote || question}` },
     catalog: async () => ({ items: [newsItem] }),
+    collect: async (_db, options) => { collectCalls.push(options); return { stored: 1, tagged: 1, failedTopics: [] } },
   }).listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   await adminServices().db.collection('newsArticles').doc(newsItem.newsKey).set(newsItem)
@@ -58,6 +60,21 @@ before(async () => {
   second = (await request(9099, '/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key', { returnSecureToken: true })).data
 })
 after(async () => { await new Promise(resolve => server.close(resolve)); await adminServices().db.terminate(); net.Socket.prototype.connect = originalConnect })
+
+test('scheduled collection requires the shared cron secret', async () => {
+  delete process.env.CRON_SECRET
+  assert.equal((await request(port, '/api/cron/collect', {})).status, 503)
+  process.env.CRON_SECRET = 'offline-cron-secret'
+  try {
+    assert.equal((await request(port, '/api/cron/collect', {})).status, 401)
+    assert.equal((await request(port, '/api/cron/collect', {}, 'wrong-secret')).status, 401)
+    assert.equal(collectCalls.length, 0)
+    const result = await request(port, '/api/cron/collect', {}, 'offline-cron-secret')
+    assert.deepEqual(result.data, { stored: 1, tagged: 1, failedTopics: [] })
+    assert.equal(collectCalls[0].tagLimit, 90)
+    assert.ok(collectCalls[0].deadline > Date.now())
+  } finally { delete process.env.CRON_SECRET }
+})
 
 test('requires real Firebase tokens and rejects untrusted origins', async () => {
   assert.equal((await request(port, '/api/profile')).status, 401)

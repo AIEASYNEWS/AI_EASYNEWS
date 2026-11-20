@@ -48,7 +48,7 @@ JSON만 반환하세요: {"items":[{"id":"제공된 id","topics":["jobs"],"keywo
 
 let tagging = null
 /** Tags untagged catalog records in small batches; concurrent callers share one run. */
-export async function tagStoredNews(db, records, { limit = 60, batchSize = 15, tag = tagArticles } = {}) {
+export async function tagStoredNews(db, records, { limit = 60, batchSize = 15, tag = tagArticles, deadline = Infinity } = {}) {
   if (!aiConfigured()) return 0
   if (tagging) return tagging
   const pending = records.filter(record => !record.tags && record.newsKey)
@@ -57,6 +57,8 @@ export async function tagStoredNews(db, records, { limit = 60, batchSize = 15, t
   tagging = (async () => {
     let count = 0
     for (let start = 0; start < pending.length; start += batchSize) {
+      // Serverless requests have a hard time limit; leftovers are tagged by the next run.
+      if (Date.now() > deadline) break
       const batch = pending.slice(start, start + batchSize)
       let tags
       try { tags = await tag(batch, AbortSignal.timeout(90_000)) } catch (error) {

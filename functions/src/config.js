@@ -9,6 +9,7 @@ export function getConfig() {
   return {
     projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'demo-ai-easynews',
     aiKey: process.env.MONOROUTER_API_KEY?.trim() || '',
+    cronSecret: process.env.CRON_SECRET?.trim() || '',
     aiModel: process.env.MONOROUTER_MODEL?.trim() || '',
     aiBaseUrl: (process.env.MONOROUTER_BASE_URL || 'https://monogpt.kr/api/monorouter/v1').replace(/\/$/, ''),
     // Temporarily offer unlimited conversions to every account, including guests.
