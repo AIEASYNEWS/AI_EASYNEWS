@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { apiRequest } from '../apis/client'
 import { getFeed, getImage } from '../apis/feed'
 import { getNotifications } from '../apis/account'
 import { saveProfile } from '../apis/profile'
@@ -13,7 +14,7 @@ import { RequestState } from '../components/ui/RequestState'
 import { topicLabel } from '../constants/topics'
 import type { Region } from '../constants/regions'
 import { useAccountResource } from '../hooks/useAccountResource'
-import type { FeedItem, FeedResponse } from '../types/news'
+import type { FeedItem, FeedResponse, NewsItem } from '../types/news'
 import { relativeTime } from '../utils/date'
 import { emptyDraft, type ProfileDraft } from '../utils/profileDraft'
 import { InterestFields } from './ProfileSteps'
@@ -122,6 +123,38 @@ interface HomePageProps {
 }
 
 /** A2 홈: location chip, matching keywords, the top story and the next ones. */
+export function PublicNewsList({ query = '', topic = '', sort = 'latest', onRetry }: {
+  query?: string; topic?: string; sort?: string; onRetry: () => void
+}) {
+  const [items, setItems] = useState<NewsItem[]>()
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    apiRequest<{ items: NewsItem[] }>('/news/public', { authenticated: false, signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setItems(data.items) })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true) })
+    return () => controller.abort()
+  }, [])
+  if (failed) return <RequestState error="공개 뉴스를 불러오지 못했어요." onRetry={onRetry} />
+  if (!items) return <RequestState loading />
+  const words = query.trim().toLocaleLowerCase('ko').split(/\s+/).filter(Boolean)
+  const visible = items.filter(item => (!topic || topic === item.topicId) &&
+    words.every(word => [item.title, item.excerpt, item.publisher].join(' ').toLocaleLowerCase('ko').includes(word)))
+  if (sort === 'oldest') visible.reverse()
+  return <section aria-label="공개 뉴스" className="mt-5 pb-12">
+    <p className="text-sm text-muted">맞춤 뉴스를 불러오는 동안 언론사의 공개 기사를 보여드려요.</p>
+    <button type="button" onClick={onRetry} className="my-2 text-sm text-brand underline">다시 시도</button>
+    {visible.length ? <ul className="divide-y divide-line">{visible.map(item => <li key={item.id}>
+      <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="block py-4">
+        <p className="text-xs text-muted">{item.publisher} · {relativeTime(item.publishedAt)}</p>
+        <h3 className="mt-1 text-base font-bold">{item.title}</h3>
+        {item.excerpt && <p className="mt-1 line-clamp-2 text-sm text-secondary">{item.excerpt}</p>}
+        <span className="mt-1 inline-block text-xs text-brand">원문 읽기 ↗</span>
+      </a>
+    </li>)}</ul> : <RequestState empty="현재 공개 기사 중 검색 조건에 맞는 기사가 없어요." />}
+  </section>
+}
+
 export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExplore, onMyPage, onMore, onNotifications }: HomePageProps) {
   const [feed, setFeed] = useState<FeedResponse>()
   const [error, setError] = useState('')
@@ -142,7 +175,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
     const timer = window.setTimeout(() => setToast(undefined), 4000)
     return () => window.clearTimeout(timer)
   }, [toast])
-  const reload = () => { setFeed(undefined); setVersion(value => value + 1) }
+  const reload = () => { setError(''); setFeed(undefined); setVersion(value => value + 1) }
 
   async function changeRegion(region: Region) {
     setRegionSaving(true)
@@ -156,7 +189,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
   const keywords = feed ? [...feed.topicIds.map(topicLabel), ...feed.customKeywords] : []
   const [top, ...rest] = feed?.items ?? []
   let body
-  if (error) body = <RequestState error={error} onRetry={reload} />
+  if (error) body = <PublicNewsList onRetry={reload} />
   else if (!feed) body = <HomeSkeleton />
   else if (!keywords.length) body = <EmptyState icon="tag" title="관심 분야를 고르면 맞춤 뉴스를 찾아 드려요" body="관심 있는 분야를 하나 이상 골라 주세요."
     action={<PillButton className="h-11 px-6 text-sm" onClick={() => setSheet('keywords')}>분야 고르기</PillButton>} />
@@ -211,7 +244,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
             </button>
             <span className="text-xs text-muted">관심사에 맞춰 찾은 뉴스</span>
           </div>
-          <h1 className="text-2xl leading-8 font-bold">{feed?.nickname ? `${feed.nickname}님을` : '나를'} 위한 추천 뉴스</h1>
+          <h1 className="text-2xl leading-8 font-bold">{error ? '최신 뉴스' : (feed?.nickname ? `${feed.nickname}님을 위한 추천 뉴스` : '나를 위한 추천 뉴스')}</h1>
         </div>
         <div className="flex items-center gap-1">
           {!member && <button type="button" onClick={onLogin} className="cursor-pointer px-1 text-[13px] font-medium text-secondary underline">로그인</button>}
@@ -221,7 +254,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
         </div>
       </div>
       {feed && !feed.profileComplete && <button type="button" onClick={onProfile} className="mt-1 cursor-pointer text-left text-xs leading-[18px] text-brand underline">나이·직종을 알려 주면 더 잘 맞는 뉴스를 찾아 드려요</button>}
-      <section aria-labelledby="keywords-heading" className="mt-[26px]">
+      {!error && <section aria-labelledby="keywords-heading" className="mt-[26px]">
         <div className="flex items-center justify-between">
           <h2 id="keywords-heading" className="text-base font-bold">나의 매칭 키워드</h2>
           <button type="button" onClick={() => setSheet('keywords')} className="flex h-6 cursor-pointer items-center gap-0.5 text-sm font-medium text-secondary">편집<LineIcon name="next" size={16} /></button>
@@ -231,7 +264,7 @@ export function HomePage({ member, onArticle, onProfile, onChats, onLogin, onExp
           {feed ? keywords.map(word => <span key={word} className="flex h-10 shrink-0 items-center rounded-full border border-border bg-white px-4 text-sm font-medium text-secondary">{word}</span>)
             : [0, 1, 2].map(index => <Skeleton key={index} className="h-10 w-20 shrink-0 rounded-full" />)}
         </div>
-      </section>
+      </section>}
       {body}
     </Screen>
     {sheet === 'keywords' && feed && <KeywordSheet initial={initialDraft} onClose={() => setSheet(undefined)}
