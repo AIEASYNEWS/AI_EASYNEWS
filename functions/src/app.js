@@ -308,9 +308,15 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
     }
   })
   app.use('/api', router)
-  app.use((error, _request, response, _next) => {
-    const mapped = error instanceof z.ZodError || error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large'
-      ? publicError(new AppError('INVALID_REQUEST', '입력한 내용을 확인해 주세요.')) : publicError(error)
+  app.use((error, request, response, _next) => {
+    const invalid = error instanceof z.ZodError || error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large'
+    // Firestore daily quota (Spark plan: 50k reads / 20k writes) or overload: gRPC code 8 RESOURCE_EXHAUSTED.
+    const exhausted = error?.code === 8 || error?.code === 'resource-exhausted' || /RESOURCE_EXHAUSTED|Quota exceeded/i.test(error?.message || '')
+    const mapped = invalid ? publicError(new AppError('INVALID_REQUEST', '입력한 내용을 확인해 주세요.'))
+      : exhausted ? publicError(new AppError('DATA_QUOTA_EXCEEDED', '오늘 이용량이 많아 잠시 기사를 불러올 수 없어요. 잠시 후 다시 시도해 주세요.', 503))
+        : publicError(error)
+    // Unexpected failures were silent before; log them so the hosting logs show the cause (no request bodies or tokens).
+    if (mapped.status >= 500) console.error('API error', request.method, request.path, error?.code ?? '', error?.name ?? '', String(error?.message || '').slice(0, 300))
     response.status(mapped.status).json(mapped)
   })
   return app
