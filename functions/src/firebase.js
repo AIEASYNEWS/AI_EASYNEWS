@@ -43,14 +43,21 @@ export function adminServices() {
   }
   const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy
   const localProxy = !emulatorOnly && !hostedRuntime && proxyUrl
-  const app = getApps()[0] || initializeApp({
+  const app = getApps().find(entry => entry.name === '[DEFAULT]') || initializeApp({
     projectId,
     ...(emulatorOnly ? { credential: emulatorCredential } : configuredCredential ? { credential: configuredCredential } : {}),
     ...(localProxy ? { httpAgent: new HttpsProxyAgent(proxyUrl) } : {}),
   })
-  const db = localProxy
+  const dataProjectId = !emulatorOnly && process.env.FIRESTORE_DATA_PROJECT_ID?.trim()
+  const dataApp = dataProjectId && dataProjectId !== projectId
+    ? getApps().find(entry => entry.name === 'news-data') || initializeApp({
+        projectId: dataProjectId,
+        credential: app.options.credential,
+      }, 'news-data')
+    : app
+  const db = localProxy && dataApp === app
     ? proxyDb ??= createProxyFirestore(projectId, credentialPath, proxyUrl)
-    : getFirestore(app)
+    : getFirestore(dataApp)
   if (emulatorOnly && !emulatorDbConfigured) {
     db.settings({ grpcOptions: { 'grpc.enable_http_proxy': 0 } })
     emulatorDbConfigured = true

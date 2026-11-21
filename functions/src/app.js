@@ -11,7 +11,7 @@ import { parsePublicUrl } from './safeFetch.js'
 import { isRegion } from './regions.js'
 import { findSimilar } from './similar.js'
 import { enrichImages, fetchArticleImage } from './images.js'
-import { collectNews, getExploreNews } from './news.js'
+import { collectNews, getExploreNews, parseRssFeed, searchNaverHub } from './news.js'
 import { aiConfigured, assertAiConfigured, rewriteArticle, chatAnswer } from './ai.js'
 import { getNewsItem, readStoredNews, topicNews, topicNotifications } from './newsCatalog.js'
 import { AGE_GROUPS, GENDERS, OCCUPATIONS, expandKeyword, keywordKey, buildFeed, feedItem, personalReason, profileSummary, scoreMatch, tagStoredNews, weightKeys } from './matching.js'
@@ -95,6 +95,36 @@ export function createApp({ articleReader = readArticle, rewrite = rewriteArticl
   })
   const router = express.Router()
   router.get('/health', (_request, response) => response.json({ ok: true, aiConfigured: Boolean(getConfig().aiKey && getConfig().aiModel), firebaseProject: getConfig().projectId }))
+  // Only publisher feeds enter this shared cache. No profile or Firestore reads.
+  let publicFeed
+  router.get('/news/public', async (_request, response) => {
+    if (!publicFeed || publicFeed.expires <= Date.now()) {
+      const sources = ['https://www.yna.co.kr/rss/news.xml', 'https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01&plink=RSSREADER']
+      const result = Promise.allSettled(sources.map(async url => {
+        const feed = await fetch(url, { signal: AbortSignal.timeout(4500) })
+        if (!feed.ok) throw new Error('Publisher feed unavailable')
+        return parseRssFeed(await feed.text(), url)
+      })).then(async results => {
+        let items = results.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+        if (!items.length && getConfig().naverHub) {
+          items = (await searchNaverHub('주요 뉴스', getConfig().naverHub, { limit: 30 })).items
+        }
+        if (!items.length) throw new AppError('NEWS_UNAVAILABLE', '공개 뉴스를 불러오지 못했어요.', 503)
+        return [...new Map(items.map(item => [item.id, item])).values()]
+          .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)).slice(0, 60)
+      })
+      publicFeed = { result, expires: Date.now() + 5 * 60_000 }
+    }
+    const entry = publicFeed
+    try {
+      const items = await entry.result
+      response.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600')
+      response.json({ items })
+    } catch (error) {
+      if (publicFeed === entry) publicFeed = undefined
+      throw error
+    }
+  })
   router.get('/news', async (request, response) => {
     const query = z.object({ query: z.string().max(100).default(''), topic: z.enum(['', ...TOPIC_IDS]).default(''), sort: z.enum(['latest', 'oldest']).default('latest'), page: z.coerce.number().int().min(1).max(20).default(1) }).parse(request.query)
     response.json(await getExploreNews(query))
