@@ -2,15 +2,15 @@ import { createHash, randomInt } from 'node:crypto'
 import { articleId } from './articles.js'
 import { adminServices } from './firebase.js'
 
-// Enough recent articles for one day of matching across every topic.
-const catalogLimit = 600
+// Limit reads per cold start while keeping a pool of stories from multiple topics.
+const catalogLimit = 150
 let recent
 
 export async function readStoredNews(db = adminServices().db) {
   if (recent?.db === db && Date.now() < recent.expires) return recent.result
   const result = db.collection('newsArticles').orderBy('publishedAt', 'desc').limit(catalogLimit).get()
     .then(snapshot => ({ items: uniqueNews(snapshot.docs.map(doc => doc.data())) }))
-  recent = { db, result, expires: Date.now() + 5 * 60_000 }
+  recent = { db, result, expires: Date.now() + 15 * 60_000 }
   try {
     const news = await result
     if (!news.items.length && recent?.result === result) recent = undefined
